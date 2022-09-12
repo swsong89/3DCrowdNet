@@ -15,7 +15,12 @@ data/*.npy
 # j_regressor
 # data/*/*.npy
 *.tar
+*.tar.*
+*.sh
+*.docx
+*.npy
 *.zip
+*.json
 
 data/*/*.zip
 data/MSCOCO/train2017
