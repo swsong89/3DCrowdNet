@@ -16,7 +16,7 @@ from utils.transforms import rot6d_to_axis_angle
 class Model(nn.Module):
     def __init__(self, backbone, pose2feat, position_net, rotation_net, vposer):
         super(Model, self).__init__()
-        self.backbone = backbone
+        self.backbone = backbone  # 特征提取部分的ResNet50
         self.pose2feat = pose2feat
         self.position_net = position_net
         self.rotation_net = rotation_net
@@ -47,7 +47,7 @@ class Model(nn.Module):
         cam_trans = torch.cat((t_xy, t_z[:,None]),1)
         return cam_trans
 
-    def make_2d_gaussian_heatmap(self, joint_coord_img):
+    def make_2d_gaussian_heatmap(self, joint_coord_img):  # 利用2d坐标生成热力图
         x = torch.arange(cfg.output_hm_shape[2])
         y = torch.arange(cfg.output_hm_shape[1])
         yy, xx = torch.meshgrid(y, x)
@@ -82,18 +82,18 @@ class Model(nn.Module):
         return joint_proj, joint_cam, mesh_cam, mesh_cam_render
 
     def forward(self, inputs, targets, meta_info, mode):
-        early_img_feat = self.backbone(inputs['img'])  #pose_guided_img_feat
+        early_img_feat = self.backbone(inputs['img'])  #pose_guided_img_feat  输入img经过ResNet50 early-stage提取的特征
 
         # get pose gauided image feature
-        joint_coord_img = inputs['joints']
+        joint_coord_img = inputs['joints']  # 2d pose
         with torch.no_grad():
-            joint_heatmap = self.make_2d_gaussian_heatmap(joint_coord_img.detach())
+            joint_heatmap = self.make_2d_gaussian_heatmap(joint_coord_img.detach())  # 通过2d pose生成2d pose heatmap
             # remove blob centered at (0,0) == invalid ones
-            joint_heatmap = joint_heatmap * inputs['joints_mask'][:,:,:,None]
+            joint_heatmap = joint_heatmap * inputs['joints_mask'][:,:,:,None]  #TODO inputs['joints_mask']不知道是什么
         pose_img_feat = self.pose2feat(early_img_feat, joint_heatmap)
-        pose_guided_img_feat = self.backbone(pose_img_feat, skip_early=True)  # 2048 x 8 x 8
+        pose_guided_img_feat = self.backbone(pose_img_feat, skip_early=True)  # 输出 2048 x 8 x 8 C'2048
 
-        joint_img, joint_score = self.position_net(pose_guided_img_feat)  # refined 2D pose or 3D pose
+        joint_img, joint_score = self.position_net(pose_guided_img_feat)  # refined 2D pose or 3D pose  pose_guided_img_feat 2048x8x8
 
         # estimate model parameters
         root_pose_6d, z, shape_param, cam_param = self.rotation_net(pose_guided_img_feat, joint_img.detach(), joint_score.detach())

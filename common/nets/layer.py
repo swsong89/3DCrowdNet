@@ -17,9 +17,9 @@ def make_linear_layers(feat_dims, relu_final=True, use_bn=False):
 
     return nn.Sequential(*layers)
 
-def make_conv_layers(feat_dims, kernel=3, stride=1, padding=1, bnrelu_final=True):
+def make_conv_layers(feat_dims, kernel=3, stride=1, padding=1, bnrelu_final=True):  # feat_dims=[64+joint_num,64], [in_channels, out_channels]
     layers = []
-    for i in range(len(feat_dims)-1):
+    for i in range(len(feat_dims)-1): # 如果是[A,B,C]则表明有2层，第一层卷积A,B 第二次B,C
         layers.append(
             nn.Conv2d(
                 in_channels=feat_dims[i],
@@ -28,12 +28,12 @@ def make_conv_layers(feat_dims, kernel=3, stride=1, padding=1, bnrelu_final=True
                 stride=stride,
                 padding=padding
                 ))
-        # Do not use BN and ReLU for final estimation
+        # Do not use BN and ReLU for final estimation  Pose2Feat使用bnrelu
         if i < len(feat_dims)-2 or (i == len(feat_dims)-2 and bnrelu_final):
             layers.append(nn.BatchNorm2d(feat_dims[i+1]))
-            layers.append(nn.ReLU(inplace=True))
+            layers.append(nn.ReLU(inplace=True))  # inplace原地操作，即是否该边输入的数据，True即输入A改变从B，顺便就赋值了，不需要申请新的空间
 
-    return nn.Sequential(*layers)
+    return nn.Sequential(*layers) # *号加在了是实参上，代表的是将输入迭代器拆成一个个元素 (*[nn,conv2d, nn.BatchNorm2d, nn.relu]) -> (nn,conv2d, nn.BatchNorm2d, nn.relu)
 
 def make_conv1d_layers(feat_dims, kernel=3, stride=1, padding=1, bnrelu_final=True):
     layers = []

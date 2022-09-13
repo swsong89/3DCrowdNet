@@ -21,6 +21,7 @@ data/*.npy
 *.npy
 *.zip
 *.json
+*.jpg
 
 data/*/*.zip
 data/MSCOCO/train2017

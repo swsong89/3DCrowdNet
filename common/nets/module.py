@@ -10,14 +10,14 @@ from utils.mano import MANO
 from utils.smpl import SMPL
 
 
-class Pose2Feat(nn.Module):
-    def __init__(self, joint_num):
+class Pose2Feat(nn.Module):  # 将img_feat和joint_heatmap进行拼接，再进行一个卷积操作该边通道为C,得到的特征送入ResNet50剩余部分
+    def __init__(self, joint_num):  # joint_num是spuerset 30
         super(Pose2Feat, self).__init__()
         self.joint_num = joint_num
-        self.conv = make_conv_layers([64+joint_num,64])
+        self.conv = make_conv_layers([64+joint_num,64])  # C=64,这个64是early-stage阶段的通道,joint_num是Js, 后面这个64是论文中定义的输出通道数
 
     def forward(self, img_feat, joint_heatmap):
-        feat = torch.cat((img_feat, joint_heatmap),1)
+        feat = torch.cat((img_feat, joint_heatmap),1)  # img_feat 和joint_heatmap都是NCHW,所以在dim1上拼接,NxCx64x64 NxJsx64x64 = Nx(C+Js)x64x64
         feat = self.conv(feat)
         return feat
 
@@ -32,19 +32,19 @@ class PositionNet(nn.Module):
             self.human_model = SMPL()
             self.joint_num = self.human_model.graph_joint_num
 
-        self.hm_shape = [cfg.output_hm_shape[0] // 8, cfg.output_hm_shape[1] // 8, cfg.output_hm_shape[2] // 8]
-        self.conv = make_conv_layers([2048, self.joint_num * self.hm_shape[0]], kernel=1, stride=1, padding=0, bnrelu_final=False)
+        self.hm_shape = [cfg.output_hm_shape[0] // 8, cfg.output_hm_shape[1] // 8, cfg.output_hm_shape[2] // 8]  # 8x8x8 output_hm_shape=[64,64,64] CHW
+        self.conv = make_conv_layers([2048, self.joint_num * self.hm_shape[0]], kernel=1, stride=1, padding=0, bnrelu_final=False) # [2048, 15x8]
 
     def soft_argmax_3d(self, heatmap3d):
-        heatmap3d = heatmap3d.reshape((-1, self.joint_num, self.hm_shape[0] * self.hm_shape[1] * self.hm_shape[2]))
-        heatmap3d = F.softmax(heatmap3d, 2)
-        heatmap3d = heatmap3d.reshape((-1, self.joint_num, self.hm_shape[0], self.hm_shape[1], self.hm_shape[2]))
+        heatmap3d = heatmap3d.reshape((-1, self.joint_num, self.hm_shape[0] * self.hm_shape[1] * self.hm_shape[2]))  # [N, 15, 8x8x8]
+        heatmap3d = F.softmax(heatmap3d, 2)  # [1, 15, 8x8x8], 2 在64这些数中进行softmax
+        heatmap3d = heatmap3d.reshape((-1, self.joint_num, self.hm_shape[0], self.hm_shape[1], self.hm_shape[2]))  # [N, 15, 8, 8, 8] NxJcxZxYxX
 
-        accu_x = heatmap3d.sum(dim=(2, 3))
-        accu_y = heatmap3d.sum(dim=(2, 4))
-        accu_z = heatmap3d.sum(dim=(3, 4))
+        accu_x = heatmap3d.sum(dim=(2, 3))  # Z Y投影 [N, 15, 8]
+        accu_y = heatmap3d.sum(dim=(2, 4))  # Z X
+        accu_z = heatmap3d.sum(dim=(3, 4))  # Y Z
 
-        accu_x = accu_x * torch.arange(self.hm_shape[2]).float().cuda()[None, None, :]
+        accu_x = accu_x * torch.arange(self.hm_shape[2]).float().cuda()[None, None, :]  # 对[N,15, 8]最后面的8行分别乘0-8,然后增加两个维度变成[1, 1, N, 15, 8]
         accu_y = accu_y * torch.arange(self.hm_shape[1]).float().cuda()[None, None, :]
         accu_z = accu_z * torch.arange(self.hm_shape[0]).float().cuda()[None, None, :]
 
@@ -55,12 +55,12 @@ class PositionNet(nn.Module):
         coord_out = torch.cat((accu_x, accu_y, accu_z), dim=2)
         return coord_out
 
-    def forward(self, img_feat):
-        # joint heatmap
+    def forward(self, img_feat):  # 2048x8x8
+        # joint heatmap  H3D部分self.conv(img_feat)得到15(Js)x8(D)x8x8
         joint_heatmap = self.conv(img_feat).view(-1, self.joint_num, self.hm_shape[0], self.hm_shape[1], self.hm_shape[2])
 
         # joint coord
-        joint_coord = self.soft_argmax_3d(joint_heatmap)
+        joint_coord = self.soft_argmax_3d(joint_heatmap)  # 利用H 3D 得到 P 3D
 
         # joint score sampling
         scores = []

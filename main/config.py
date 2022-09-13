@@ -32,7 +32,7 @@ class Config:
     lr = 1e-4
     lr_backbone = 1e-4
     lr_dec_factor = 10
-    train_batch_size = 64
+    train_batch_size = 16
     use_gt_info = True
 
     ## testing config
@@ -42,14 +42,14 @@ class Config:
     render = False
 
     ## others
-    num_thread = 16
+    num_thread = 64
     gpu_ids = '0'
     num_gpus = 1
     continue_train = False
     
     ## directory
-    cur_dir = osp.dirname(os.path.abspath(__file__))
-    root_dir = osp.join(cur_dir, '..')
+    cur_dir = osp.dirname(os.path.abspath(__file__))  # 当前文件目录，即3DCrowdNNet/main    __file__ = '/data2/2020/ssw/3DCrowdNet/main/config.py'
+    root_dir = osp.join(cur_dir, '..')  # '/data2/2020/ssw/3DCrowdNet/main/..' 即3DCrowdNet
     data_dir = osp.join(root_dir, 'data')
     output_dir = osp.join(root_dir, 'output')
     # hongsuk choi style
