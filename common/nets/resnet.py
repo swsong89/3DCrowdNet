@@ -53,12 +53,12 @@ class ResNetBackbone(nn.Module):
 
         return nn.Sequential(*layers)
 
-    def forward(self, x, skip_early=False):
+    def forward(self, x, skip_early=False):  # x [1,3,256,256]
         if not skip_early:
-            x = self.conv1(x)
-            x = self.bn1(x)
-            x = self.relu(x)
-            x = self.maxpool(x)
+            x = self.conv1(x)  # x[1,64,128,128]
+            x = self.bn1(x)  # x[1,64,128,128]
+            x = self.relu(x)  # x[1,64,128,128]
+            x = self.maxpool(x)  # x[1,64,64,64]
 
             return x
 

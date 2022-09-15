@@ -9,18 +9,19 @@ import torch.cuda.amp as amp
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--gpu', type=str, dest='gpu_ids', default='0')
-    parser.add_argument('--continue', dest='continue_train', action='store_true', default=True)
+    parser.add_argument('--continue', dest='continue_train', default=True, action='store_true')
     parser.add_argument('--exp_dir', type=str, default='', help='for resuming train')
     parser.add_argument('--amp', dest='use_mixed_precision', action='store_true', help='use automatic mixed precision training')
     parser.add_argument('--init_scale', type=float, default=1024., help='initial loss scale')
-    parser.add_argument('--cfg', type=str, default='/data2/2020/ssw/3DCrowdNet/assets/yaml/3dpw.yml', help='experiment configure file name')
+    parser.add_argument('--cfg', type=str, default='/home/ssw/code/3DCrowdNet/assets/yaml/3dpw.yml', help='experiment configure file name')
+    # parser.add_argument('--cfg', type=str, default='/data2/2020/ssw/3DCrowdNet/assets/yaml/3dpw.yml',help='experiment configure file name')
 
     args = parser.parse_args()
 
     if not args.gpu_ids:
         assert 0, "Please set propoer gpu ids"
  
-    if '-' in args.gpu_ids:
+    if '-' in args.gpu_ids:   # 0-3, 使用3块gpu训练,0 ,1, 2
         gpus = args.gpu_ids.split('-')
         gpus[0] = int(gpus[0])
         gpus[1] = int(gpus[1]) + 1

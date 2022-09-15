@@ -19,12 +19,12 @@ class Config:
     resnet_type = 50  # 50, 101, 152
     
     ## input, output
-    input_img_shape = (256, 256)  #(256, 192)
-    output_hm_shape = (64, 64, 64)  #(64, 64, 48)
+    input_img_shape = (256, 256)  #(256, 192)  h w
+    output_hm_shape = (64, 64, 64)  #(64, 64, 48) c h w = z y x
     bbox_3d_size = 2 if 'FreiHAND' not in trainset_3d + trainset_2d + [testset] else 0.3
     sigma = 2.5
     focal = (5000, 5000)  # virtual focal lengths
-    princpt = (input_img_shape[1] / 2, input_img_shape[0] / 2)  # virtual principal point position
+    princpt = (input_img_shape[1] / 2, input_img_shape[0] / 2)  # w h = x yvirtual principal point position  虚拟主点位置
 
     ## training config
     lr_dec_epoch = [15] if 'FreiHAND' not in trainset_3d + trainset_2d + [testset] else [17,21]

@@ -27,7 +27,7 @@ def vis_bbox(img, bbox, alpha=1):
     return cv2.addWeighted(img, 1.0 - alpha, kp_mask, alpha, 0)
 
 
-def vis_coco_skeleton(img, kps, kps_lines, alpha=1):
+def vis_coco_skeleton(img, kps, kps_lines, alpha=1):  #  # [375,500,3] [3,19] [18]
     colors = [
             # face
             (255/255, 153/255, 51/255),
@@ -64,21 +64,21 @@ def vis_coco_skeleton(img, kps, kps_lines, alpha=1):
             (51 / 255, 153 / 255, 255 / 255),
             ]
 
-    colors = [[c[2]*255,c[1]*255,c[0]*255] for c in colors]
+    colors = [[c[2]*255,c[1]*255,c[0]*255] for c in colors]  # TODO 上边/255 下边*255有什么作用，如果只是调换位置的话不用这样
 
     # Perform the drawing on a copy of the image, to allow for blending.
     kp_mask = np.copy(img)
 
-    line_thick = 2 #13
-    circle_rad = 2 #10
-    circle_thick = 3 #7
+    line_thick = 2 #13  画一条线的宽度
+    circle_rad = 2 #10  画一个圈的半径
+    circle_thick = 3 #7 画一个圈，圈线的宽度
 
-    # Draw the keypoints.
-    for l in range(len(kps_lines)):
+    # Draw the keypoints. 画关节点和线
+    for l in range(len(kps_lines)):  # kps [3,19] 分别是x,y,confidence
         i1 = kps_lines[l][0]
         i2 = kps_lines[l][1]
-        p1 = kps[0, i1].astype(np.int32), kps[1, i1].astype(np.int32)
-        p2 = kps[0, i2].astype(np.int32), kps[1, i2].astype(np.int32)
+        p1 = kps[0, i1].astype(np.int32), kps[1, i1].astype(np.int32)  # (93,182)第一个点坐标
+        p2 = kps[0, i2].astype(np.int32), kps[1, i2].astype(np.int32)  # (96,179)第二个点坐标
         cv2.line(
             kp_mask, p1, p2,
             color=colors[l], thickness=line_thick, lineType=cv2.LINE_AA)
@@ -90,7 +90,7 @@ def vis_coco_skeleton(img, kps, kps_lines, alpha=1):
             radius=circle_rad, color=colors[l], thickness=circle_thick, lineType=cv2.LINE_AA)
 
     # Blend the keypoints.
-    return cv2.addWeighted(img, 1.0 - alpha, kp_mask, alpha, 0)
+    return cv2.addWeighted(img, 1.0 - alpha, kp_mask, alpha, 0)  # TODO addWeighted干什么用的
 
 
 def vis_keypoints_with_skeleton(img, kps, kps_lines, kp_thresh=0.4, alpha=1, kps_scores=None):
@@ -211,7 +211,7 @@ def save_obj(v, f, file_name='output.obj'):
     obj_file.close()
 
 def render_mesh(img, mesh, face, cam_param, color=(1.0, 1.0, 0.9, 1.0)):
-    # mesh
+    # mesh img [375,500,3] h,w,c mesh [6890,3] face [13776,3] cam_param = {'focal': (5000, 5000), 'princpt': (96.97314453125, 214.2333984375)}
     mesh = trimesh.Trimesh(mesh, face)
     rot = trimesh.transformations.rotation_matrix(np.radians(180), [1, 0, 0])
     mesh.apply_transform(rot)

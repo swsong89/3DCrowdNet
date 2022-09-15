@@ -56,12 +56,12 @@ def rigid_align(A, B):
     A2 = np.transpose(np.dot(c*R, np.transpose(A))) + t
     return A2
 
-def transform_joint_to_other_db(src_joint, src_name, dst_name):
+def transform_joint_to_other_db(src_joint, src_name, dst_name):  # src_joint [19,3]
     src_joint_num = len(src_name)
     dst_joint_num = len(dst_name)
 
-    new_joint = np.zeros(((dst_joint_num,) + src_joint.shape[1:]), dtype=np.float32)
-    for src_idx in range(len(src_name)):
+    new_joint = np.zeros(((dst_joint_num,) + src_joint.shape[1:]), dtype=np.float32)  # (30,) + (3,) = (30, 3)  new_joint [30,3]
+    for src_idx in range(len(src_name)):  # 根据关节点name将src转到dst中
         name = src_name[src_idx]
         if name in dst_name:
             dst_idx = dst_name.index(name)
@@ -88,21 +88,21 @@ def normalize_adj(adj):
     normalized_adj = np.dot(np.dot(_D, adj_self), _D)
     return normalized_adj
 
-def rot6d_to_axis_angle(x):
+def rot6d_to_axis_angle(x):  # [1, 6]
     batch_size = x.shape[0]
 
-    x = x.view(-1, 3, 2)
-    a1 = x[:, :, 0]
-    a2 = x[:, :, 1]
-    b1 = F.normalize(a1)
-    b2 = F.normalize(a2 - torch.einsum('bi,bi->b', b1, a2).unsqueeze(-1) * b1)
-    b3 = torch.cross(b1, b2)
-    rot_mat = torch.stack((b1, b2, b3), dim=-1)  # 3x3 rotation matrix
+    x = x.view(-1, 3, 2)  # [1,3,2]
+    a1 = x[:, :, 0]  # [1,3]
+    a2 = x[:, :, 1]  # [1,3]
+    b1 = F.normalize(a1)  # 标准化，该数除以这行数的平方和开方
+    b2 = F.normalize(a2 - torch.einsum('bi,bi->b', b1, a2).unsqueeze(-1) * b1)  # b2 [1,3] torch.einsum('bi,bi->b', b1, a2) [1] 加.queeze(-1) ->[1,1]
+    b3 = torch.cross(b1, b2)  # [1,3]
+    rot_mat = torch.stack((b1, b2, b3), dim=-1)  # 3x3 rotation matrix  [1,3,3]相当于一列一列
 
-    rot_mat = torch.cat([rot_mat, torch.zeros((batch_size, 3, 1)).cuda().float()], 2)  # 3x4 rotation matrix
-    axis_angle = tgm.rotation_matrix_to_angle_axis(rot_mat).reshape(-1, 3)  # axis-angle
+    rot_mat = torch.cat([rot_mat, torch.zeros((batch_size, 3, 1)).cuda().float()], 2)  # 3x4 rotation matrix [1,3,4]
+    axis_angle = tgm.rotation_matrix_to_angle_axis(rot_mat).reshape(-1, 3)  # axis-angle [1,3] [N,axis]
     axis_angle[torch.isnan(axis_angle)] = 0.0
-    return axis_angle
+    return axis_angle # axis-angle [1,3] [N,axis]
 
 
 def convert_crop_cam_to_orig_img(cam, bbox, img_width, img_height):

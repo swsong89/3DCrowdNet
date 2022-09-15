@@ -17,14 +17,14 @@ def load_img(path, order='RGB'):
     img = img.astype(np.float32)
     return img
 
-def get_bbox(joint_img, joint_valid):
+def get_bbox(joint_img, joint_valid): # 函数作用，先是根据joint_valid阈值去除置信度较低的点，然后计算得到包含所有关节点的最小图片
 
     x_img, y_img = joint_img[:,0], joint_img[:,1]
-    x_img = x_img[joint_valid==1]; y_img = y_img[joint_valid==1];
+    x_img = x_img[joint_valid==1]; y_img = y_img[joint_valid==1];  # 有一个关节点置信度不够，所以验证后变成[18,3]
     xmin = min(x_img); ymin = min(y_img); xmax = max(x_img); ymax = max(y_img);
 
     x_center = (xmin+xmax)/2.; width = xmax-xmin;
-    xmin = x_center - 0.5*width*1.2
+    xmin = x_center - 0.5*width*1.2  # x_center - 0.5*width刚好是xmin,然后减成0.5*width*1.2,相当于把关节点附近区域也包括
     xmax = x_center + 0.5*width*1.2
     
     y_center = (ymin+ymax)/2.; height = ymax-ymin;
@@ -32,7 +32,7 @@ def get_bbox(joint_img, joint_valid):
     ymax = y_center + 0.5*height*1.2
 
     bbox = np.array([xmin, ymin, xmax - xmin, ymax - ymin]).astype(np.float32)
-    return bbox
+    return bbox  # [ 74.18213  170.1289    46.58203   89.208984]
 
 def compute_iou(src_roi, dst_roi):
     # IoU calculate with GTs
@@ -66,22 +66,22 @@ def compute_iou(src_roi, dst_roi):
 #
 #     return [x,y,w,h]
 
-def process_bbox(bbox, img_width, img_height, is_3dpw_test=False):
+def process_bbox(bbox, img_width, img_height, is_3dpw_test=False):  # 函数作用1.先比较图片和最小关节点图，缩小bbox, 正常境况下这步骤没什么用。img_width=500, img_height=375,
     # sanitize bboxes
-    x, y, w, h = bbox
+    x, y, w, h = bbox  # [ 74.18213  170.1289    46.58203   89.208984]
     x1 = np.max((0, x))
     y1 = np.max((0, y))
-    x2 = np.min((img_width - 1, x1 + np.max((0, w - 1))))
-    y2 = np.min((img_height - 1, y1 + np.max((0, h - 1))))
+    x2 = np.min((img_width - 1, x1 + np.max((0, w - 1))))  # 取原始图像的右上角x坐标和关节点图像坐标右上角的最小值
+    y2 = np.min((img_height - 1, y1 + np.max((0, h - 1))))  # 即如果这个人只占一部分图像，那么就裁减一下只包含到这个人就行
     if is_3dpw_test:
         bbox = np.array([x1, y1, x2-x1, y2-y1], dtype=np.float32)
     else:
         if w*h > 0 and x2 >= x1 and y2 >= y1:
-            bbox = np.array([x1, y1, x2-x1, y2-y1], dtype=np.float32)
+            bbox = np.array([x1, y1, x2-x1, y2-y1], dtype=np.float32)  # [ 74.18213  170.1289    45.58203   88.208984]
         else:
             return None
 
-   # aspect ratio preserving bbox
+   # aspect ratio preserving bbox 2.根据输入要求的尺寸，按比例缩放关节点坐标bbox比例为网络输入尺寸比例，即w=h,中心点位置不变
     w = bbox[2]
     h = bbox[3]
     c_x = bbox[0] + w/2.
@@ -89,14 +89,14 @@ def process_bbox(bbox, img_width, img_height, is_3dpw_test=False):
     aspect_ratio = cfg.input_img_shape[1]/cfg.input_img_shape[0]
     if w > aspect_ratio * h:
         h = w / aspect_ratio
-    elif w < aspect_ratio * h:
+    elif w < aspect_ratio * h:  # w=45.58203  aspect_ratio * h=88.208984375
         w = h * aspect_ratio
-    bbox[2] = w*1.25
+    bbox[2] = w*1.25  # 这一步感觉bbox没有必要再放大了
     bbox[3] = h*1.25
     bbox[0] = c_x - bbox[2]/2.
     bbox[1] = c_y - bbox[3]/2.
-
-    return bbox
+    # 原始图像的coco_joint bbox [ 74.18213  170.1289    46.58203   89.208984]
+    return bbox  #            [ 41.84253 159.10278 110.26123 110.26123]
 
 def get_aug_config(exclude_flip):
     scale_factor = 0.25
@@ -134,27 +134,27 @@ def augmentation(img, bbox, data_split, exclude_flip=False):
     return img, trans, inv_trans, rot, do_flip
 
 
-def generate_patch_image(cvimg, bbox, scale, rot, do_flip, out_shape):
+def generate_patch_image(cvimg, bbox, scale, rot, do_flip, out_shape):  # rot旋转 do_flip翻转, 函数作用是处理输入图像，根据do_flip, scale, rotation处理bbox,然后转到网络输入图像尺寸
     img = cvimg.copy()
     img_height, img_width, img_channels = img.shape
    
-    bb_c_x = float(bbox[0] + 0.5*bbox[2])
+    bb_c_x = float(bbox[0] + 0.5*bbox[2])  # bb_c_x = 96.97314453125 = 41.84253 + 0.5*110.26123
     bb_c_y = float(bbox[1] + 0.5*bbox[3])
     bb_width = float(bbox[2])
     bb_height = float(bbox[3])
 
-    if do_flip:
+    if do_flip:  # 左右翻转 y flip
         img = img[:, ::-1, :]
-        bb_c_x = img_width - bb_c_x - 1
+        bb_c_x = img_width - bb_c_x - 1  # 和process_bbox函数中img_width-1一样
 
-    trans = gen_trans_from_patch_cv(bb_c_x, bb_c_y, bb_width, bb_height, out_shape[1], out_shape[0], scale, rot)
-    img_patch = cv2.warpAffine(img, trans, (int(out_shape[1]), int(out_shape[0])), flags=cv2.INTER_LINEAR)
-    img_patch = img_patch.astype(np.float32)
-    inv_trans = gen_trans_from_patch_cv(bb_c_x, bb_c_y, bb_width, bb_height, out_shape[1], out_shape[0], scale, rot, inv=True)
+    trans = gen_trans_from_patch_cv(bb_c_x, bb_c_y, bb_width, bb_height, out_shape[1], out_shape[0], scale, rot)  # 将原图转到输入图片的旋转角，trans = [[ 2.3217590e+00  0.0000000e+00 -9.7148270e+01], [ 3.7371475e-16  2.3217590e+00 -3.6939832e+02]]
+    img_patch = cv2.warpAffine(img, trans, (int(out_shape[1]), int(out_shape[0])), flags=cv2.INTER_LINEAR)  # 直接将原图img根据旋转trans处理得到网络输入  TODO 看明白函数cv2.warpAffine
+    img_patch = img_patch.astype(np.float32)  # [256， 256，3】
+    inv_trans = gen_trans_from_patch_cv(bb_c_x, bb_c_y, bb_width, bb_height, out_shape[1], out_shape[0], scale, rot, inv=True)  #将输入图反转换到原图的旋转角
 
     return img_patch, trans, inv_trans
 
-def rotate_2d(pt_2d, rot_rad):
+def rotate_2d(pt_2d, rot_rad):  # pt_2d= [ 0, 55.130615] rot_rad=0
     x = pt_2d[0]
     y = pt_2d[1]
     sn, cs = np.sin(rot_rad), np.cos(rot_rad)
@@ -162,27 +162,27 @@ def rotate_2d(pt_2d, rot_rad):
     yy = x * sn + y * cs
     return np.array([xx, yy], dtype=np.float32)
 
-def gen_trans_from_patch_cv(c_x, c_y, src_width, src_height, dst_width, dst_height, scale, rot, inv=False):
-    # augment size with scale
-    src_w = src_width * scale
-    src_h = src_height * scale
+def gen_trans_from_patch_cv(c_x, c_y, src_width, src_height, dst_width, dst_height, scale, rot, inv=False): # 根据bbox信息，目标图像的w,h,以及bbox需要放大缩小的尺寸scale,需要旋转的角度rot得到旋转处理信息
+    # augment size with scale scale的作用是应该将bbox放大多少 TODO 需要搞明白是如何处理得到trans，然后原始图像如何根据trans据可以得到目标图像
+    src_w = src_width * scale  # src_w=110.26123046875
+    src_h = src_height * scale # src_h=110.26123046875
     src_center = np.array([c_x, c_y], dtype=np.float32)
 
     # augment rotation
     rot_rad = np.pi * rot / 180
-    src_downdir = rotate_2d(np.array([0, src_h * 0.5], dtype=np.float32), rot_rad)
-    src_rightdir = rotate_2d(np.array([src_w * 0.5, 0], dtype=np.float32), rot_rad)
+    src_downdir = rotate_2d(np.array([0, src_h * 0.5], dtype=np.float32), rot_rad)  # [ 0.       55.130615]
+    src_rightdir = rotate_2d(np.array([src_w * 0.5, 0], dtype=np.float32), rot_rad)  # [55.130615  0.      ]
 
     dst_w = dst_width
     dst_h = dst_height
-    dst_center = np.array([dst_w * 0.5, dst_h * 0.5], dtype=np.float32)
-    dst_downdir = np.array([0, dst_h * 0.5], dtype=np.float32)
-    dst_rightdir = np.array([dst_w * 0.5, 0], dtype=np.float32)
+    dst_center = np.array([dst_w * 0.5, dst_h * 0.5], dtype=np.float32)  # [128. 128.]
+    dst_downdir = np.array([0, dst_h * 0.5], dtype=np.float32)  # [  0. 128.]
+    dst_rightdir = np.array([dst_w * 0.5, 0], dtype=np.float32)  # [128.   0.]
 
     src = np.zeros((3, 2), dtype=np.float32)
-    src[0, :] = src_center
-    src[1, :] = src_center + src_downdir
-    src[2, :] = src_center + src_rightdir
+    src[0, :] = src_center  # [ 96.973145 214.2334  ]
+    src[1, :] = src_center + src_downdir  # [ 96.973145 269.364   ] =  [ 96.973145 214.2334  ] +  [ 0.       55.130615]
+    src[2, :] = src_center + src_rightdir  # [152.10376 214.2334 ]
 
     dst = np.zeros((3, 2), dtype=np.float32)
     dst[0, :] = dst_center
@@ -195,5 +195,5 @@ def gen_trans_from_patch_cv(c_x, c_y, src_width, src_height, dst_width, dst_heig
         trans = cv2.getAffineTransform(np.float32(src), np.float32(dst))
 
     trans = trans.astype(np.float32)
-    return trans
+    return trans   # [[ 2.3217590e+00  0.0000000e+00 -9.7148270e+01], [ 3.7371475e-16  2.3217590e+00 -3.6939832e+02]]
 

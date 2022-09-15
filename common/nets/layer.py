@@ -77,30 +77,30 @@ def make_deconv_layers(feat_dims, bnrelu_final=True):
 class GraphConvBlock(nn.Module):
     def __init__(self, adj, dim_in, dim_out):
         super(GraphConvBlock, self).__init__()
-        self.adj = adj
-        self.vertex_num = adj.shape[0]
+        self.adj = adj  # [15,15]
+        self.vertex_num = adj.shape[0]  # [15]
         self.fcbn_list = nn.ModuleList([nn.Sequential(*[nn.Linear(dim_in, dim_out), nn.BatchNorm1d(dim_out)]) for _ in range(self.vertex_num)])
 
-    def forward(self, feat):
-        batch_size = feat.shape[0]
+    def forward(self, feat):  # [1,15,2052]
+        batch_size = feat.shape[0]  # 1
 
-        # apply kernel for each vertex
-        feat = torch.stack([fcbn(feat[:,i,:]) for i,fcbn in enumerate(self.fcbn_list)],1)
+        # apply kernel for each vertex, 相当于取每个关节点[1,2048]进行一个卷积得到[1,128]
+        feat = torch.stack([fcbn(feat[:,i,:]) for i,fcbn in enumerate(self.fcbn_list)],1)  # [1,15,128]
 
         # apply adj
-        adj = self.adj.cuda()[None,:,:].repeat(batch_size,1,1)
-        feat = torch.bmm(adj, feat)
+        adj = self.adj.cuda()[None, :, :].repeat(batch_size,1,1)  # TODO repeat函数是复制，【15，15】 1，1 ->【15，15】 1,2 -> [15,30]
+        feat = torch.bmm(adj, feat)  # 【1，15，1288】
 
         # apply activation function
         out = F.relu(feat)
-        return out
+        return out  # 【1，15，1288】
 
 
 class GraphResBlock(nn.Module):
     def __init__(self, adj, dim):
         super(GraphResBlock, self).__init__()
-        self.adj = adj
-        self.graph_block1 = GraphConvBlock(adj, dim, dim)
+        self.adj = adj  # 15
+        self.graph_block1 = GraphConvBlock(adj, dim, dim)  # 15，128，128
         self.graph_block2 = GraphConvBlock(adj, dim, dim)
 
     def forward(self, feat):
