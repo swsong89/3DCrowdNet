@@ -17,12 +17,17 @@ def load_img(path, order='RGB'):
     img = img.astype(np.float32)
     return img
 
-def get_bbox(joint_img, joint_valid): # 函数作用，先是根据joint_valid阈值去除置信度较低的点，然后计算得到包含所有关节点的最小图片
-
+def get_bbox(joint_img, joint_valid):
+    """
+    1.先是根据joint_valid阈值去除置信度较低的点，然后计算得到包含所有关节点的最小bbox
+    2. 将bbox框放大一点，增加冗余
+    """
+    # 计算得到目前关节点位置的xmin xmax ymin ymax,即左下角和右上角的点
     x_img, y_img = joint_img[:,0], joint_img[:,1]
     x_img = x_img[joint_valid==1]; y_img = y_img[joint_valid==1];  # 有一个关节点置信度不够，所以验证后变成[18,3]
     xmin = min(x_img); ymin = min(y_img); xmax = max(x_img); ymax = max(y_img);
 
+    # 将目前的bbox框放大一点，增加冗余
     x_center = (xmin+xmax)/2.; width = xmax-xmin;
     xmin = x_center - 0.5*width*1.2  # x_center - 0.5*width刚好是xmin,然后减成0.5*width*1.2,相当于把关节点附近区域也包括
     xmax = x_center + 0.5*width*1.2

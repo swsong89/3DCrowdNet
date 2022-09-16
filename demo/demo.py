@@ -120,7 +120,8 @@ transform = transforms.ToTensor()
 pose2d_result_path = './input/2d_pose_result.json'  # demo的标注坐标，原点是左上角，x是从左到右，y是从上到下
 with open(pose2d_result_path) as f:
     pose2d_result = json.load(f)
-# pose2d_result [1086] {'100023.jpg':list}, 这个list维度为[9, 17, 5] 9个人。1086张图片,每张图片数据为[person_nums, 17, 5] 17为coco数据关节点坐标, 5分别为中心坐标,上下宽度，左右长度，以及置信度
+# pose2d_result [1086] {'100023.jpg':list}, 这个list维度为[9, 17, 5] 9个人。
+# 1086张图片,每张图片数据为[person_nums, 17, 5] 17为coco数据关节点坐标, 5分别为中心坐标,上下宽度，左右长度，以及置信度
 img_dir = './input/images'
 for img_name in sorted(pose2d_result.keys()):
     img_path = osp.join(img_dir, img_name)
@@ -134,7 +135,7 @@ for img_name in sorted(pose2d_result.keys()):
         continue
 
     drawn_joints = []
-    c = coco_joint_list
+    c = coco_joint_list  # [person_nums, 17, 5]  17为coco数据集关节点数量, 5中分别为关节点[x,y,confidence,不知道，不知道]
     # manually assign the order of output meshes
     # coco_joint_list = [c[2], c[0], c[1], c[4], c[3]]
 
@@ -147,13 +148,14 @@ for img_name in sorted(pose2d_result.keys()):
         coco_joint_valid = (coco_joint_img[:, 2].copy().reshape(-1, 1) > pose_thr).astype(np.float32) # coco_joint_img[:, 2] [19] reshape后变成[19, 1]  第5个 0 R_ear 置信度 0.02976
 
 
-        # filter inaccurate inputs
+        # filter inaccurate inputs 过滤某个人的关节点太少的情况
         det_score = sum(coco_joint_img[:, 2])  # 10.866020886755301 如果这个人所有关节点的置信度和小于1的话放弃这个人
         if det_score < 1.0:
             continue
         if len(coco_joint_img[:, 2:].nonzero()[0]) < 1:  #TODO 弄懂.nonzeros 如果这个人的关节点置信度都是0的话跳过。 coco_joint_img[:, 2:] [19,1] coco_joint_img[:, 2] [19,]
             continue
-        # filter the same targets
+
+        # filter the same targets drawn_joints如果有给定的话，需要过滤一下相同位置的关节点
         tmp_joint_img = coco_joint_img.copy()  # [19,3]
         continue_check = False
         for ddx in range(len(drawn_joints)):
