@@ -80,6 +80,9 @@ class PositionNet(nn.Module):
 
 
 class RotationNet(nn.Module):
+    """
+    8x8坐标空间得到的
+    """
     def __init__(self):
         super(RotationNet, self).__init__()
 
@@ -107,7 +110,7 @@ class RotationNet(nn.Module):
         self.shape_out = make_linear_layers([self.joint_num*128, self.human_model.shape_param_dim], relu_final=False)  # shape_param_dim=10 SMPL shape beta 10
         self.cam_out = make_linear_layers([self.joint_num*128,3], relu_final=False)
 
-    def sample_image_feature(self, img_feat, joint_coord_img):  # [1,2048,8,8] [1,15,3]
+    def sample_image_feature(self, img_feat, joint_coord_img):  # 8x8空间 [1,2048,8,8] [1,15,3]
         img_feat_joints = []
         for j in range(self.joint_num):
             x = joint_coord_img[:, j, 0] / (self.hm_shape[2]-1) * 2 - 1
@@ -120,7 +123,7 @@ class RotationNet(nn.Module):
         img_feat_joints = img_feat_joints.permute(1, 0 ,2) # (batch_size, joint_num, channel_dim) [1,15,2048]
         return img_feat_joints
 
-    def forward(self, img_feat, joint_coord_img, joint_score):  # [1,2048,8,8] [1,15,3] [1,15,1]
+    def forward(self, img_feat, joint_coord_img, joint_score):  # 8x8空间 [1,2048,8,8] [1,15,3] [1,15,1]
         # pose parameter
         img_feat_joints = self.sample_image_feature(img_feat, joint_coord_img)  # [1,15,2048]
         feat = torch.cat((img_feat_joints, joint_coord_img, joint_score),2)  # [1,15,2052(C'+3+1=2048+3+1=2052)]

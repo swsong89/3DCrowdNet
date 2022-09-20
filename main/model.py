@@ -18,7 +18,7 @@ class Model(nn.Module):
         super(Model, self).__init__()
         self.backbone = backbone  # 特征提取部分的ResNet50
         self.pose2feat = pose2feat
-        self.position_net = position_net
+        self.position_net = position_net """8x8"""
         self.rotation_net = rotation_net
         self.vposer = vposer
 
@@ -35,19 +35,20 @@ class Model(nn.Module):
         self.coord_loss = CoordLoss()
         self.param_loss = ParamLoss()
 
-    def get_camera_trans(self, cam_param, meta_info, is_render):  # [1,3] meta_info={'bbox': tensor([[ 41.8425, 159.1028, 110.2612, 110.2612]], device='cuda:0')} True
+    def get_camera_trans(self, cam_param, meta_info, is_render):  #  cam_param [1,3] meta_info={'bbox': tensor([[ 41.8425, 159.1028, 110.2612, 110.2612]], device='cuda:0')} True
         # camera translation
-        t_xy = cam_param[:, :2]  # [1,2]
+        t_xy = cam_param[:, :2]  # [1,2]  cam_param [1,3] [[ 0.0899,  0.2569, 0.1759]
         gamma = torch.sigmoid(cam_param[:, 2]) # [1] apply sigmoid to make it positive
         k_value = torch.FloatTensor([math.sqrt(cfg.focal[0]*cfg.focal[1]*cfg.camera_3d_size*cfg.camera_3d_size/(cfg.input_img_shape[0]*cfg.input_img_shape[1]))]).cuda().view(-1)  # [1] 值为48.8281
         if is_render:
             bbox = meta_info['bbox']  # [[ 41.8425, 159.1028, 110.2612, 110.2612]]
             k_value = k_value * math.sqrt(cfg.input_img_shape[0]*cfg.input_img_shape[1]) / (bbox[:, 2]*bbox[:, 3]).sqrt()
-        t_z = k_value * gamma  # tensor([61.6558], device='cuda:0') [1]
+        t_z = k_value * gamma  # tensor([61.6558], device='cuda:0') [1] 输入图片 256/bbox 100 比例
         cam_trans = torch.cat((t_xy, t_z[:, None]), 1)  # [1,3] [[ 0.0899,  0.2569, 61.6558]]
         return cam_trans
 
-    def make_2d_gaussian_heatmap(self, joint_coord_img):  # 利用2d坐标生成热力图  joint_coord_img [1,30,3]
+    def make_2d_gaussian_heatmap(self, joint_coord_img):
+        """利用2d坐标生成热力图  joint_coord_img [1,30,3] H2D"""
         x = torch.arange(cfg.output_hm_shape[2])  # x轴从左到右 [64]
         y = torch.arange(cfg.output_hm_shape[1])  # y轴从上到下 [64]
         yy, xx = torch.meshgrid(y, x)  ## [64,64] yy是每行相同的,即64行,0行全是0,  xx是每列相同的,每行都是0-63,即左上角是原点，往右是x轴正方向，往下是y轴正方向
@@ -61,25 +62,30 @@ class Model(nn.Module):
         return heatmap  # [1,30,64,64] NxJsxYxX
 
     def get_coord(self, smpl_pose, smpl_shape, smpl_trans):  # pose [1,72] shape [1,10] camera [1,3]
+        """
+        将SMPL3D坐标根据相机转换参数得到相机3D坐标
+        """
         batch_size = smpl_pose.shape[0]
-        mesh_cam, _ = self.human_model_layer(smpl_pose, smpl_shape, smpl_trans)  # [1,6890,3
-        # camera-centered 3D coordinate
-        joint_cam = torch.bmm(torch.from_numpy(self.joint_regressor).cuda()[None,:,:].repeat(batch_size,1,1), mesh_cam)  # [1,30,3] <- [1,30,6890], [1,6890,3]
+        mesh_cam, _ = self.human_model_layer(smpl_pose, smpl_shape, smpl_trans)  # [1,6890,3] 将Mesh转换到相机视角
+        # camera-centered 3D coordinate 相机3D坐标
+        joint_cam = torch.bmm(torch.from_numpy(self.joint_regressor).cuda()[None, :, :].repeat(batch_size, 1, 1), mesh_cam)  # [1,30,3] <- [1,30,6890], [1,6890,3]
         root_joint_idx = self.human_model.root_joint_idx  # 0
 
-        # project 3D coordinates to 2D space
+        # project 3D coordinates to 2D space, 将相机坐标点转换到影像投影图片坐标中x/Xc = f/Zc -> (x = f*Xc/Zc, u-u0 = x/dx, dx=1) -> u = Xc/Zc*f + u0,dx是像元，单位元素的长度表示，比如1cm显示一个元素，只是成像清晰好坏的区别，可以假设为1
         x = joint_cam[:, :, 0] / (joint_cam[:, :, 2] + 1e-4) * cfg.focal[0] + cfg.princpt[0]  # [1,30]此时关节点位置是在input_img上
         y = joint_cam[:, :, 1] / (joint_cam[:, :, 2] + 1e-4) * cfg.focal[1] + cfg.princpt[1]  # [1,30]
+
+        # 将输入图片的关节点位置等比例放到输出热力图中
         x = x / cfg.input_img_shape[1] * cfg.output_hm_shape[2]  # cfg.input_img_shape[1]=256   cfg.output_hm_shape[2]=64
         y = y / cfg.input_img_shape[0] * cfg.output_hm_shape[1]
-        joint_proj = torch.stack((x,y),2)  # [1,30,2]
+        joint_proj = torch.stack((x, y), 2)  # [1,30,2]  output_hm中
 
         mesh_cam_render = mesh_cam.clone()  # [1,6890,3]
         # root-relative 3D coordinates  相对于根节点的3d坐标
         root_cam = joint_cam[:, root_joint_idx, None, :]  # [1,1,3]  [[[8.7456e-02, 3.8836e-02, 6.1679e+01]]]
-        joint_cam = joint_cam - root_cam  # [1,30,3]
-        mesh_cam = mesh_cam - root_cam  # [1,6890,3]  #  mesh_cam =  mesh_cam_render - root_cam
-        return joint_proj, joint_cam, mesh_cam, mesh_cam_render  # [1,30,2]  [1,30,3] [1,6890,3]  [1,6890,3]
+        joint_cam = joint_cam - root_cam  # [1,30,3]  # 相对于根节点的其他节点的joint_cam
+        mesh_cam = mesh_cam - root_cam  # [1,6890,3]  #  相对于根节点的mesh_cam mesh_cam =  mesh_cam_render - root_cam
+        return joint_proj, joint_cam, mesh_cam, mesh_cam_render  # 输出热力图64空间[1,30,2]  [1,30,3] [1,6890,3]  [1,6890,3]
 
     def forward(self, inputs, targets, meta_info, mode):  # inputs = {'img':[1,3,256,256], 'joints':[1,30,3],'joints_mask':[1,30,1]} NCHW
         early_img_feat = self.backbone(inputs['img'])  #pose_guided_img_feat  输入img经过ResNet50 early-stage提取的特征F [1,64,64,64]
@@ -93,9 +99,9 @@ class Model(nn.Module):
         pose_img_feat = self.pose2feat(early_img_feat, joint_heatmap)  # [1,64,64,64] = conv(concat([1,64,64,64] [1,30,64,64]))
         pose_guided_img_feat = self.backbone(pose_img_feat, skip_early=True)  # F' [1,2048,8,8] 输出 2048 x 8 x 8 C'2048
 
-        joint_img, joint_score = self.position_net(pose_guided_img_feat)  # refined 2D pose or 3D pose  joint_img [1,15,3] joint_score [1,15,1] pose_guided_img_feat [1,2048,8,8]
+        joint_img, joint_score = self.position_net(pose_guided_img_feat)  # 8x8, refined 2D pose or 3D pose  joint_img [1,15,3] joint_score [1,15,1] pose_guided_img_feat [1,2048,8,8]
 
-        # estimate model parameters  [1，6] [1，32] [1,10] [1，3]
+        # estimate model parameters  output_hm_shape (64,64)空间 [1，6] [1，32] [1,10] [1，3]
         root_pose_6d, z, shape_param, cam_param = self.rotation_net(pose_guided_img_feat, joint_img.detach(), joint_score.detach())
         # change root pose 6d + latent code -> axis angles
         root_pose = rot6d_to_axis_angle(root_pose_6d)  # [1,3]
@@ -108,7 +114,8 @@ class Model(nn.Module):
         if mode == 'train':
             # loss functions
             loss = {}
-            # joint_img: 0~8, joint_proj: 0~64, target: 0~64
+            # joint_img: 0~8 P3D通过特征F'得到, joint_proj: 0~64 output_hm_shape最终阶段通过mesh投影, target: 0~64
+            # body_joint应该是通过设备捕捉到的，smpl是先计算出mesh,然后得到smpl_joint
             loss['body_joint_img'] = (1/8) * self.coord_loss(joint_img*8, self.human_model.reduce_joint_set(targets['orig_joint_img']), self.human_model.reduce_joint_set(meta_info['orig_joint_trunc']), meta_info['is_3D'])
             loss['smpl_joint_img'] = (1/8) * self.coord_loss(joint_img*8, self.human_model.reduce_joint_set(targets['fit_joint_img']),
                                                      self.human_model.reduce_joint_set(meta_info['fit_joint_trunc']) * meta_info['is_valid_fit'][:, None, None])
@@ -166,7 +173,7 @@ def get_model(vertex_num, joint_num, mode):
     backbone = ResNetBackbone(cfg.resnet_type)
     pose2feat = Pose2Feat(joint_num)
     position_net = PositionNet()
-    rotation_net = RotationNet()
+    rotation_net = RotationNet() """"""
     vposer = Vposer()
 
     if mode == 'train':
@@ -178,3 +185,804 @@ def get_model(vertex_num, joint_num, mode):
     model = Model(backbone, pose2feat, position_net, rotation_net, vposer)
     return model
 
+"""
+ResNetBackbone(
+  (conv1): Conv2d(3, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
+  (bn1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+  (relu): ReLU(inplace=True)
+  (maxpool): MaxPool2d(kernel_size=3, stride=2, padding=1, dilation=1, ceil_mode=False)
+  (layer1): Sequential(
+    (0): Bottleneck(
+      (conv1): Conv2d(64, 64, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(64, 256, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace=True)
+      (downsample): Sequential(
+        (0): Conv2d(64, 256, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      )
+    )
+    (1): Bottleneck(
+      (conv1): Conv2d(256, 64, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(64, 256, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace=True)
+    )
+    (2): Bottleneck(
+      (conv1): Conv2d(256, 64, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(64, 256, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace=True)
+    )
+  )
+  (layer2): Sequential(
+    (0): Bottleneck(
+      (conv1): Conv2d(256, 128, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(128, 128, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(128, 512, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace=True)
+      (downsample): Sequential(
+        (0): Conv2d(256, 512, kernel_size=(1, 1), stride=(2, 2), bias=False)
+        (1): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      )
+    )
+    (1): Bottleneck(
+      (conv1): Conv2d(512, 128, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(128, 512, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace=True)
+    )
+    (2): Bottleneck(
+      (conv1): Conv2d(512, 128, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(128, 512, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace=True)
+    )
+    (3): Bottleneck(
+      (conv1): Conv2d(512, 128, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(128, 512, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace=True)
+    )
+  )
+  (layer3): Sequential(
+    (0): Bottleneck(
+      (conv1): Conv2d(512, 256, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(256, 1024, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(1024, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace=True)
+      (downsample): Sequential(
+        (0): Conv2d(512, 1024, kernel_size=(1, 1), stride=(2, 2), bias=False)
+        (1): BatchNorm2d(1024, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      )
+    )
+    (1): Bottleneck(
+      (conv1): Conv2d(1024, 256, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(256, 1024, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(1024, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace=True)
+    )
+    (2): Bottleneck(
+      (conv1): Conv2d(1024, 256, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(256, 1024, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(1024, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace=True)
+    )
+    (3): Bottleneck(
+      (conv1): Conv2d(1024, 256, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(256, 1024, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(1024, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace=True)
+    )
+    (4): Bottleneck(
+      (conv1): Conv2d(1024, 256, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(256, 1024, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(1024, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace=True)
+    )
+    (5): Bottleneck(
+      (conv1): Conv2d(1024, 256, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(256, 1024, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(1024, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace=True)
+    )
+  )
+  (layer4): Sequential(
+    (0): Bottleneck(
+      (conv1): Conv2d(1024, 512, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(512, 512, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(512, 2048, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(2048, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace=True)
+      (downsample): Sequential(
+        (0): Conv2d(1024, 2048, kernel_size=(1, 1), stride=(2, 2), bias=False)
+        (1): BatchNorm2d(2048, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      )
+    )
+    (1): Bottleneck(
+      (conv1): Conv2d(2048, 512, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(512, 2048, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(2048, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace=True)
+    )
+    (2): Bottleneck(
+      (conv1): Conv2d(2048, 512, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(512, 2048, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(2048, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace=True)
+    )
+  )
+)"""
+
+"""
+Pose2Feat(
+  (conv): Sequential(
+    (0): Conv2d(94, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+    (1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+    (2): ReLU(inplace=True)
+  )
+)"""
+
+"""RotationNet(
+  (graph_block): Sequential(
+    (0): GraphConvBlock(
+      (fcbn_list): ModuleList(
+        (0): Sequential(
+          (0): Linear(in_features=2052, out_features=128, bias=True)
+          (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        )
+        (1): Sequential(
+          (0): Linear(in_features=2052, out_features=128, bias=True)
+          (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        )
+        (2): Sequential(
+          (0): Linear(in_features=2052, out_features=128, bias=True)
+          (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        )
+        (3): Sequential(
+          (0): Linear(in_features=2052, out_features=128, bias=True)
+          (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        )
+        (4): Sequential(
+          (0): Linear(in_features=2052, out_features=128, bias=True)
+          (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        )
+        (5): Sequential(
+          (0): Linear(in_features=2052, out_features=128, bias=True)
+          (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        )
+        (6): Sequential(
+          (0): Linear(in_features=2052, out_features=128, bias=True)
+          (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        )
+        (7): Sequential(
+          (0): Linear(in_features=2052, out_features=128, bias=True)
+          (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        )
+        (8): Sequential(
+          (0): Linear(in_features=2052, out_features=128, bias=True)
+          (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        )
+        (9): Sequential(
+          (0): Linear(in_features=2052, out_features=128, bias=True)
+          (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        )
+        (10): Sequential(
+          (0): Linear(in_features=2052, out_features=128, bias=True)
+          (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        )
+        (11): Sequential(
+          (0): Linear(in_features=2052, out_features=128, bias=True)
+          (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        )
+        (12): Sequential(
+          (0): Linear(in_features=2052, out_features=128, bias=True)
+          (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        )
+        (13): Sequential(
+          (0): Linear(in_features=2052, out_features=128, bias=True)
+          (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        )
+        (14): Sequential(
+          (0): Linear(in_features=2052, out_features=128, bias=True)
+          (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        )
+      )
+    )
+    (1): GraphResBlock(
+      (graph_block1): GraphConvBlock(
+        (fcbn_list): ModuleList(
+          (0): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (1): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (2): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (3): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (4): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (5): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (6): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (7): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (8): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (9): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (10): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (11): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (12): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (13): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (14): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+        )
+      )
+      (graph_block2): GraphConvBlock(
+        (fcbn_list): ModuleList(
+          (0): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (1): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (2): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (3): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (4): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (5): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (6): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (7): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (8): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (9): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (10): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (11): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (12): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (13): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (14): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+        )
+      )
+    )
+    (2): GraphResBlock(
+      (graph_block1): GraphConvBlock(
+        (fcbn_list): ModuleList(
+          (0): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (1): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (2): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (3): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (4): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (5): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (6): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (7): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (8): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (9): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (10): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (11): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (12): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (13): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (14): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+        )
+      )
+      (graph_block2): GraphConvBlock(
+        (fcbn_list): ModuleList(
+          (0): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (1): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (2): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (3): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (4): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (5): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (6): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (7): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (8): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (9): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (10): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (11): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (12): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (13): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (14): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+        )
+      )
+    )
+    (3): GraphResBlock(
+      (graph_block1): GraphConvBlock(
+        (fcbn_list): ModuleList(
+          (0): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (1): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (2): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (3): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (4): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (5): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (6): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (7): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (8): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (9): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (10): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (11): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (12): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (13): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (14): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+        )
+      )
+      (graph_block2): GraphConvBlock(
+        (fcbn_list): ModuleList(
+          (0): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (1): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (2): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (3): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (4): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (5): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (6): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (7): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (8): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (9): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (10): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (11): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (12): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (13): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (14): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+        )
+      )
+    )
+    (4): GraphResBlock(
+      (graph_block1): GraphConvBlock(
+        (fcbn_list): ModuleList(
+          (0): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (1): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (2): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (3): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (4): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (5): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (6): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (7): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (8): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (9): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (10): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (11): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (12): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (13): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (14): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+        )
+      )
+      (graph_block2): GraphConvBlock(
+        (fcbn_list): ModuleList(
+          (0): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (1): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (2): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (3): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (4): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (5): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (6): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (7): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (8): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (9): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (10): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (11): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (12): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (13): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+          (14): Sequential(
+            (0): Linear(in_features=128, out_features=128, bias=True)
+            (1): BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+          )
+        )
+      )
+    )
+  )
+  (root_pose_out): Sequential(
+    (0): Linear(in_features=1920, out_features=6, bias=True)
+  )
+  (pose_out): Sequential(
+    (0): Linear(in_features=1920, out_features=32, bias=True)
+  )
+  (shape_out): Sequential(
+    (0): Linear(in_features=1920, out_features=10, bias=True)
+  )
+  (cam_out): Sequential(
+    (0): Linear(in_features=1920, out_features=3, bias=True)
+  )
+)"""
+
+"""Vposer(
+  (vposer): VPoser(
+    (bodyprior_enc_bn1): BatchNorm1d(63, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+    (bodyprior_enc_fc1): Linear(in_features=63, out_features=512, bias=True)
+    (bodyprior_enc_bn2): BatchNorm1d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+    (bodyprior_enc_fc2): Linear(in_features=512, out_features=512, bias=True)
+    (bodyprior_enc_mu): Linear(in_features=512, out_features=32, bias=True)
+    (bodyprior_enc_logvar): Linear(in_features=512, out_features=32, bias=True)
+    (dropout): Dropout(p=0.1, inplace=False)
+    (bodyprior_dec_fc1): Linear(in_features=32, out_features=512, bias=True)
+    (bodyprior_dec_fc2): Linear(in_features=512, out_features=512, bias=True)
+    (rot_decoder): ContinousRotReprDecoder()
+    (bodyprior_dec_out): Linear(in_features=512, out_features=126, bias=True)
+  )
+)"""

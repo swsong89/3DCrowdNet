@@ -69,8 +69,8 @@ def transform_joint_to_other_db(src_joint, src_name, dst_name):  # src_joint [19
 
     return new_joint
 
-def build_adj(vertex_num, skeleton, flip_pairs):
-    adj_matrix = np.zeros((vertex_num, vertex_num))
+def build_adj(vertex_num, skeleton, flip_pairs):  """构建Jc15关节点交集的邻接矩阵,skeleton有连线的，flip_pairs对称的 vertex_num=15, skeleton [14,] flip_pair [6,]"""
+    adj_matrix = np.zeros((vertex_num, vertex_num))  # [15,15]
     for line in skeleton:
         adj_matrix[line] = 1
         adj_matrix[line[1], line[0]] = 1
@@ -81,7 +81,7 @@ def build_adj(vertex_num, skeleton, flip_pairs):
 
 def normalize_adj(adj):
     vertex_num = adj.shape[0]
-    adj_self = adj + np.eye(vertex_num)
+    adj_self = adj + np.eye(vertex_num)  # 加一个单位阵，对角阵
     D = np.diag(adj_self.sum(0)) + np.spacing(np.array(0))
     _D = 1 / np.sqrt(D)
     _D = _D * np.eye(vertex_num) # make diagonal matrix

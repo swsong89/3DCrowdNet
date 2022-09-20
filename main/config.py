@@ -18,13 +18,13 @@ class Config:
     ## model setting
     resnet_type = 50  # 50, 101, 152
     
-    ## input, output
+    ## input, output, P2D (64, 64), H2D (64, 64), F (64,64), F' (8x8), P3D (8,8), H3D (8,8)
     input_img_shape = (256, 256)  #(256, 192)  h w
     output_hm_shape = (64, 64, 64)  #(64, 64, 48) c h w = z y x
     bbox_3d_size = 2 if 'FreiHAND' not in trainset_3d + trainset_2d + [testset] else 0.3
     sigma = 2.5
-    focal = (5000, 5000)  # virtual focal lengths
-    princpt = (input_img_shape[1] / 2, input_img_shape[0] / 2)  # w h = x yvirtual principal point position  虚拟主点位置
+    focal = (5000, 5000)  # virtual focal lengths 焦距f,实际上只有一个值，写成(5000,5000)只是为了方便形式好看
+    princpt = (input_img_shape[1] / 2, input_img_shape[0] / 2)  # w h = x y virtual principal point position  虚拟像主点位置,因为输入图片是256,256,即影响世界，故像主点128,128
 
     ## training config
     lr_dec_epoch = [15] if 'FreiHAND' not in trainset_3d + trainset_2d + [testset] else [17,21]
@@ -77,11 +77,11 @@ class Config:
         if not is_test:
             self.continue_train = continue_train
             if self.continue_train:
-                if exp_dir:
+                if exp_dir:  # 如果exp_dir给定了，在这个目录读取最后一个checkoupoint,在这个基础上继续训练
                     checkpoints = sorted(glob.glob(osp.join(exp_dir, 'checkpoint') + '/*.pth.tar'), key=lambda x: int(x.split('_')[-1][:-8]))
                     shutil.copy(checkpoints[-1], osp.join(cfg.model_dir, checkpoints[-1].split('/')[-1]))
 
-                else:
+                else:  # 如果没有给定exp_dir，即找不到上次训练的断点，就在初始模型上进行训练
                     shutil.copy(osp.join(cfg.root_dir, 'tool', 'snapshot_0.pth.tar'), osp.join(cfg.model_dir, 'snapshot_0.pth.tar'))
         elif is_test and exp_dir:
             self.output_dir = exp_dir
