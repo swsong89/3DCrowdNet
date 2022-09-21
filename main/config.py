@@ -32,7 +32,7 @@ class Config:
     lr = 1e-4
     lr_backbone = 1e-4
     lr_dec_factor = 10
-    train_batch_size = 16
+    train_batch_size = 64
     use_gt_info = True
 
     ## testing config
@@ -77,7 +77,8 @@ class Config:
         if not is_test:
             self.continue_train = continue_train
             if self.continue_train:
-                if exp_dir:  # 如果exp_dir给定了，在这个目录读取最后一个checkoupoint,在这个基础上继续训练
+                if exp_dir:
+                    print('continue_train.....')
                     checkpoints = sorted(glob.glob(osp.join(exp_dir, 'checkpoint') + '/*.pth.tar'), key=lambda x: int(x.split('_')[-1][:-8]))
                     shutil.copy(checkpoints[-1], osp.join(cfg.model_dir, checkpoints[-1].split('/')[-1]))
 

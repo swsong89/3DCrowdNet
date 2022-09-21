@@ -85,11 +85,11 @@ class GraphConvBlock(nn.Module):
         batch_size = feat.shape[0]  # 1
 
         # apply kernel for each vertex, 相当于取每个关节点[1,2048]进行一个卷积得到[1,128]
-        feat = torch.stack([fcbn(feat[:,i,:]) for i,fcbn in enumerate(self.fcbn_list)],1)  # [1,15,128]
+        feat = torch.stack([fcbn(feat[:,i,:]) for i,fcbn in enumerate(self.fcbn_list)],1)  # [1,15,128]= 15个[1,1,128] <- [1,1,2052] 卷积和[128,5012]，一个节点不同维度特征之间的信息加权和，然后需要多少维度做多少次。一层神经元数等于一层特征通道数，每个神经元特征就是HW，
 
         # apply adj
         adj = self.adj.cuda()[None, :, :].repeat(batch_size,1,1)  # TODO repeat函数是复制，【15，15】 1，1 ->【15，15】 1,2 -> [15,30]
-        feat = torch.bmm(adj, feat)  # 【1，15，1288】
+        feat = torch.bmm(adj, feat)  # 【1，15，128】 <- [15,15], [1,15,128] 不同节点同纬度特征进行信息交换
 
         # apply activation function
         out = F.relu(feat)

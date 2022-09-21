@@ -8,8 +8,8 @@ import torch.cuda.amp as amp
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--gpu', type=str, dest='gpu_ids', default='0')
-    parser.add_argument('--continue', dest='continue_train', default=True, action='store_true')
+    parser.add_argument('--gpu', type=str, dest='gpu_ids', default='2')
+    parser.add_argument('--continue', dest='continue_train', action='store_true')
     parser.add_argument('--exp_dir', type=str, default='', help='for resuming train')
     parser.add_argument('--amp', dest='use_mixed_precision', action='store_true', help='use automatic mixed precision training')
     parser.add_argument('--init_scale', type=float, default=1024., help='initial loss scale')
