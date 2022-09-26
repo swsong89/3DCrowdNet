@@ -18,7 +18,7 @@ class Model(nn.Module):
         super(Model, self).__init__()
         self.backbone = backbone  # 特征提取部分的ResNet50
         self.pose2feat = pose2feat
-        self.position_net = position_net """8x8"""
+        self.position_net = position_net
         self.rotation_net = rotation_net
         self.vposer = vposer
 

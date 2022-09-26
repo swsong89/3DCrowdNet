@@ -96,6 +96,14 @@ if __name__ == "__main__":
 
 
 ## model
+"""
+python train.py --amp --continue --gpu 0 --cfg ../assets/yaml/3dpw_crowd.yml --exp_dir ../output/exp_09-17_11:15
+python test.py --gpu 0-3 --cfg ../assets/yaml/3dpw_crowd.yml --exp_dir ../output/exp_03-28_18:26 --test_epoch 6 
+
+
+python test.py --gpu 2 --cfg ../assets/yaml/3dpw_crowd.yml --exp_dir ../output/exp_03-28_18:26 --test_epoch 6 
+
+"""
 """Model(
   (backbone): ResNetBackbone(
     (conv1): Conv2d(3, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
