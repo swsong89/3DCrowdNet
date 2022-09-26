@@ -55,7 +55,8 @@ class SMPL(object):
         new_joint = torch.stack(new_joint,1)
         return new_joint
 
-    def get_graph_adj(self):  """以skeleton节点连线，flip_pairs对称关节点构建图"""
+    def get_graph_adj(self):
+        """以skeleton节点连线，flip_pairs对称关节点构建图"""
         adj_mat = build_adj(self.graph_joint_num, self.graph_skeleton, self.graph_flip_pairs)
         normalized_adj = normalize_adj(adj_mat)
         return normalized_adj

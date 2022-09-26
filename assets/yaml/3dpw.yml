@@ -7,5 +7,3 @@ end_epoch: 11
 lr: 0.001
 lr_backbone: 0.0001
 lr_dec_factor: 10
-
-e

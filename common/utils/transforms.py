@@ -69,7 +69,8 @@ def transform_joint_to_other_db(src_joint, src_name, dst_name):  # src_joint [19
 
     return new_joint
 
-def build_adj(vertex_num, skeleton, flip_pairs):  """构建Jc15关节点交集的邻接矩阵,skeleton有连线的，flip_pairs对称的 vertex_num=15, skeleton [14,] flip_pair [6,]"""
+def build_adj(vertex_num, skeleton, flip_pairs):
+    """构建Jc15关节点交集的邻接矩阵,skeleton有连线的，flip_pairs对称的 vertex_num=15, skeleton [14,] flip_pair [6,]"""
     adj_matrix = np.zeros((vertex_num, vertex_num))  # [15,15]
     for line in skeleton:
         adj_matrix[line] = 1
