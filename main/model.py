@@ -71,7 +71,7 @@ class Model(nn.Module):
         joint_cam = torch.bmm(torch.from_numpy(self.joint_regressor).cuda()[None, :, :].repeat(batch_size, 1, 1), mesh_cam)  # [1,30,3] <- [1,30,6890], [1,6890,3]
         root_joint_idx = self.human_model.root_joint_idx  # 0
 
-        # project 3D coordinates to 2D space, 将相机坐标点转换到影像投影图片坐标中x/Xc = f/Zc -> (x = f*Xc/Zc, u-u0 = x/dx, dx=1) -> u = Xc/Zc*f + u0,dx是像元，单位元素的长度表示，比如1cm显示一个元素，只是成像清晰好坏的区别，可以假设为1
+        # project 3D coordinates to 2D space, 将相机坐标点转换到像素坐标中x/Xc = f/Zc -> (x = f*Xc/Zc, u-u0 = x/dx, dx=1) -> u = Xc/Zc*f + u0,dx是像元，单位元素的长度表示，比如1cm显示一个元素，只是成像清晰好坏的区别，可以假设为1
         x = joint_cam[:, :, 0] / (joint_cam[:, :, 2] + 1e-4) * cfg.focal[0] + cfg.princpt[0]  # [1,30]此时关节点位置是在input_img上
         y = joint_cam[:, :, 1] / (joint_cam[:, :, 2] + 1e-4) * cfg.focal[1] + cfg.princpt[1]  # [1,30]
 
@@ -173,7 +173,7 @@ def get_model(vertex_num, joint_num, mode):
     backbone = ResNetBackbone(cfg.resnet_type)
     pose2feat = Pose2Feat(joint_num)
     position_net = PositionNet()
-    rotation_net = RotationNet() """"""
+    rotation_net = RotationNet()
     vposer = Vposer()
 
     if mode == 'train':
@@ -191,6 +191,9 @@ ResNetBackbone(
   (bn1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
   (relu): ReLU(inplace=True)
   (maxpool): MaxPool2d(kernel_size=3, stride=2, padding=1, dilation=1, ceil_mode=False)
+  上面的属于early-stage
+  
+  
   (layer1): Sequential(
     (0): Bottleneck(
       (conv1): Conv2d(64, 64, kernel_size=(1, 1), stride=(1, 1), bias=False)
@@ -224,6 +227,9 @@ ResNetBackbone(
       (relu): ReLU(inplace=True)
     )
   )
+  
+  
+  
   (layer2): Sequential(
     (0): Bottleneck(
       (conv1): Conv2d(256, 128, kernel_size=(1, 1), stride=(1, 1), bias=False)
@@ -266,6 +272,9 @@ ResNetBackbone(
       (relu): ReLU(inplace=True)
     )
   )
+  
+  
+  
   (layer3): Sequential(
     (0): Bottleneck(
       (conv1): Conv2d(512, 256, kernel_size=(1, 1), stride=(1, 1), bias=False)
@@ -326,6 +335,9 @@ ResNetBackbone(
       (relu): ReLU(inplace=True)
     )
   )
+  
+  
+  
   (layer4): Sequential(
     (0): Bottleneck(
       (conv1): Conv2d(1024, 512, kernel_size=(1, 1), stride=(1, 1), bias=False)
@@ -436,6 +448,9 @@ Pose2Feat(
         )
       )
     )
+    
+    
+    
     (1): GraphResBlock(
       (graph_block1): GraphConvBlock(
         (fcbn_list): ModuleList(
@@ -501,6 +516,8 @@ Pose2Feat(
           )
         )
       )
+      
+      
       (graph_block2): GraphConvBlock(
         (fcbn_list): ModuleList(
           (0): Sequential(
@@ -565,7 +582,12 @@ Pose2Feat(
           )
         )
       )
+      
+      
     )
+    
+    
+    
     (2): GraphResBlock(
       (graph_block1): GraphConvBlock(
         (fcbn_list): ModuleList(

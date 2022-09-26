@@ -19,7 +19,7 @@ class SMPL(object):
         self.shape_param_dim = 10
         self.vposer_code_dim = 32
 
-        # add nose, L/R eye, L/R ear,
+        # add nose, L/R eye, L/R ear, 下面比如nose节点就joint_regressor只需要对应该节点是1，其余是0，是因为6890定点种331号节点就是nose节点，所以不需要回归
         self.face_kps_vertex = (331, 2802, 6262, 3489, 3990) # mesh vertex idx
         nose_onehot = np.array([1 if i == 331 else 0 for i in range(self.joint_regressor.shape[1])], dtype=np.float32).reshape(1,-1)  # [1,6890] 331对应nose的idx是1,别的都是0,下面同理
         left_eye_onehot = np.array([1 if i == 2802 else 0 for i in range(self.joint_regressor.shape[1])], dtype=np.float32).reshape(1,-1)

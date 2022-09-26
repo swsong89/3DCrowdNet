@@ -31,7 +31,7 @@ class Human36M(torch.utils.data.Dataset):
         self.coco_joint_num = 17  # original: 17
         self.coco_joints_name = (
         'Nose', 'L_Eye', 'R_Eye', 'L_Ear', 'R_Ear', 'L_Shoulder', 'R_Shoulder', 'L_Elbow', 'R_Elbow', 'L_Wrist',
-        'R_Wrist', 'L_Hip', 'R_Hip', 'L_Knee', 'R_Knee', 'L_Ankle', 'R_Ankle')
+        'R_Wrist', 'L_Hip', 'R_Hip', 'L_Knee', 'R_Knee', 'L_Ankle', 'R_Ankle')  # 特有 'Nose', 'L_Eye', 'R_Eye', 'L_Ear', 'R_Ear'
 
         # H36M joint set
         self.h36m_joint_num = 17
@@ -39,9 +39,9 @@ class Human36M(torch.utils.data.Dataset):
         self.h36m_flip_pairs = ( (1, 4), (2, 5), (3, 6), (14, 11), (15, 12), (16, 13) )
         self.h36m_skeleton = ( (0, 7), (7, 8), (8, 9), (9, 10), (8, 11), (11, 12), (12, 13), (8, 14), (14, 15), (15, 16), (0, 1), (1, 2), (2, 3), (0, 4), (4, 5), (5, 6) )
         self.h36m_root_joint_idx = self.h36m_joints_name.index('Pelvis')
-        self.h36m_eval_joint = (1, 2, 3, 4, 5, 6, 8, 10, 11, 12, 13, 14, 15, 16)
+        self.h36m_eval_joint = (1, 2, 3, 4, 5, 6, 8, 10, 11, 12, 13, 14, 15, 16)  # 没有pelvis盆骨, torso躯干, Nose鼻子，
         self.h36m_joint_regressor = np.load(osp.join('..', 'data', 'Human36M', 'J_regressor_h36m_correct.npy'))
-        self.h36m_coco_common_jidx = (1, 2, 3, 4, 5, 6, 9, 11, 12, 13, 14, 15, 16)  # for posefix, exclude pelvis
+        self.h36m_coco_common_jidx = (1, 2, 3, 4, 5, 6, 9, 11, 12, 13, 14, 15, 16)  # for posefix, exclude pelvis 没有pelvis盆骨,  torso躯干, neck, Head_top,
 
         # SMPL joint set
         self.smpl = SMPL()
@@ -68,9 +68,9 @@ class Human36M(torch.utils.data.Dataset):
 
     def get_subject(self):
         if self.data_split == 'train':
-            subject = [1,5,6,7,8]
+            subject = [1, 5, 6, 7, 8]  # Discussion, Posing, Purchases, Sitting, SittingDown
         elif self.data_split == 'test':
-            subject = [9,11]
+            subject = [9, 11]  # Smoking, Waiting
         else:
             assert 0, print("Unknown subset")
 
@@ -78,7 +78,7 @@ class Human36M(torch.utils.data.Dataset):
     
     def load_data(self):
         subject_list = self.get_subject()
-        sampling_ratio = self.get_subsampling_ratio()
+        sampling_ratio = self.get_subsampling_ratio()  # 训练5，测试64
         
         # aggregate annotations from each subject
         db = COCO()
@@ -87,7 +87,7 @@ class Human36M(torch.utils.data.Dataset):
         smpl_params = {}
         for subject in subject_list:
             # data load
-            with open(osp.join(self.annot_path, 'Human36M_subject' + str(subject) + '_data.json'),'r') as f:
+            with open(osp.join(self.annot_path, 'Human36M_subject' + str(subject) + '_data.json'), 'r') as f:
                 annot = json.load(f)
             if len(db.dataset) == 0:
                 for k,v in annot.items():
@@ -117,10 +117,10 @@ class Human36M(torch.utils.data.Dataset):
             print("Get bounding box and root from groundtruth")
 
         datalist = []
-        for aid in db.anns.keys():
-            ann = db.anns[aid]
+        for aid in db.anns.keys():  # 1559752图片
+            ann = db.anns[aid]  # {'id': 0, 'image_id': 0, 'keypoints_vis': [True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True], 'bbox': [402.65667804648615, 262.87433777970045, 127.8323473589618, 404.42892185240856]}
             image_id = ann['image_id']
-            img = db.loadImgs(image_id)[0]
+            img = db.loadImgs(image_id)[0]  # {'id': 0, 'file_name': 's_01_act_02_subact_01_ca_01/s_01_act_02_subact_01_ca_01_000001.jpg', 'width': 1000, 'height': 1002, 'subject': 1, 'action_name': 'Directions', 'action_idx': 2, 'subaction_idx': 1, 'cam_idx': 1, 'frame_idx': 0}
             img_path = osp.join(self.img_dir, img['file_name'])
             img_shape = (img['height'], img['width'])
             
@@ -130,16 +130,16 @@ class Human36M(torch.utils.data.Dataset):
                 continue
 
             # check smpl parameter exist
-            subject = img['subject']; action_idx = img['action_idx']; subaction_idx = img['subaction_idx']; frame_idx = img['frame_idx'];
+            subject = img['subject']; action_idx = img['action_idx']; subaction_idx = img['subaction_idx']; frame_idx = img['frame_idx'];  # subject=1, action_idx=2, subaction_idx=1, frame_idx=0
             try:
-                smpl_param = smpl_params[str(subject)][str(action_idx)][str(subaction_idx)][str(frame_idx)]
+                smpl_param = smpl_params[str(subject)][str(action_idx)][str(subaction_idx)][str(frame_idx)]  # 'pose' [72], 'shape' [10] 'trans' [1[3]] 'fitted_3dpose' [17[3]]
             except KeyError:
                 smpl_param = None
 
             # camera parameter
             cam_idx = img['cam_idx']
-            cam_param = cameras[str(subject)][str(cam_idx)]
-            R,t,f,c = np.array(cam_param['R'], dtype=np.float32), np.array(cam_param['t'], dtype=np.float32), np.array(cam_param['f'], dtype=np.float32), np.array(cam_param['c'], dtype=np.float32)
+            cam_param = cameras[str(subject)][str(cam_idx)]  # 'R' [3[3]] 't' [3] 'f' [2] 'c' [2]    f 1145.04944,1143.78113 c 512.54150,515.45148
+            R, t, f, c = np.array(cam_param['R'], dtype=np.float32), np.array(cam_param['t'], dtype=np.float32), np.array(cam_param['f'], dtype=np.float32), np.array(cam_param['c'], dtype=np.float32)
             cam_param = {'R': R, 't': t, 'focal': f, 'princpt': c}
             
             # only use frontal camera following previous works (HMR and SPIN)
@@ -148,37 +148,37 @@ class Human36M(torch.utils.data.Dataset):
                 
             # project world coordinate to cam, image coordinate space
             joint_world = np.array(joints[str(subject)][str(action_idx)][str(subaction_idx)][str(frame_idx)], dtype=np.float32)
-            joint_cam = world2cam(joint_world, R, t)
-            joint_img = cam2pixel(joint_cam, f, c)
-            joint_valid = np.ones((self.h36m_joint_num,1))
+            joint_cam = world2cam(joint_world, R, t)  # 世界坐标转相机坐标
+            joint_img = cam2pixel(joint_cam, f, c)  # 相机坐标转像素坐标
+            joint_valid = np.ones((self.h36m_joint_num, 1))
 
-            tight_bbox = np.array(ann['bbox'])
+            tight_bbox = np.array(ann['bbox'])  # 更紧促的bbox,因为human3.6是先捕捉的关节点，然后手动确定Bbox [213.92976 212.44571 504.28616 504.28616]
             if self.data_split == 'test' and not cfg.use_gt_info:
                 bbox = bbox_root_result[str(image_id)]['bbox'] # bbox should be aspect ratio preserved-extended. It is done in RootNet.
                 root_joint_depth = bbox_root_result[str(image_id)]['root'][2]
             else:
-                bbox = process_bbox(np.array(ann['bbox']), img['width'], img['height'])
+                bbox = process_bbox(np.array(ann['bbox']), img['width'], img['height'])  # [213.92976 212.44571 504.28616 504.28616],因为img_input_shape [256,256]等比例，所以需要把bbox也变成等比例
                 if bbox is None: continue
-                root_joint_depth = joint_cam[self.h36m_root_joint_idx][2]
+                root_joint_depth = joint_cam[self.h36m_root_joint_idx][2]  # root节点的深度直接取root相机坐标的Zc
     
             datalist.append({
                 'img_path': img_path,
                 'img_id': image_id,
                 'img_shape': img_shape,
-                'bbox': bbox,
-                'tight_bbox': tight_bbox,
-                'joint_img': joint_img,
-                'joint_cam': joint_cam,
-                'joint_valid': joint_valid,
-                'smpl_param': smpl_param,
+                'bbox': bbox,  # 根据input_img_shape处理后的bbox
+                'tight_bbox': tight_bbox,  # 原始Bbox
+                'joint_img': joint_img,  # 在像素图片上的坐标
+                'joint_cam': joint_cam,  # 相机坐标
+                'joint_valid': joint_valid,  # 每个关节点置信度都是1
+                'smpl_param': smpl_param,  # pose shape trans fiited_3d_pose
                 'root_joint_depth': root_joint_depth,
-                'cam_param': cam_param,
-                'num_overlap': 0,
-                'near_joints': np.zeros((1, self.coco_joint_num, 3), dtype=np.float32)  # coco_joint_num
+                'cam_param': cam_param,  # 相机参数 R旋转矩阵 t平移矢量 focal焦距 princpt像中点
+                'num_overlap': 0,  # 关节点遮挡的情况
+                'near_joints': np.zeros((1, self.coco_joint_num, 3), dtype=np.float32)  # coco_joint_num [1,17,3] 全是0
 
             })
             
-        return datalist
+        return datalist  # 312188
 
     def get_smpl_coord(self, smpl_param, cam_param, do_flip, img_shape):
         pose, shape, trans = smpl_param['pose'], smpl_param['shape'], smpl_param['trans']
@@ -460,3 +460,39 @@ class Human36M(torch.utils.data.Dataset):
         
         print('MPJPE from param mesh: %.2f mm' % np.mean(eval_result['mpjpe_param']))
         print('PA MPJPE from param mesh: %.2f mm' % np.mean(eval_result['pa_mpjpe_param']))
+
+### annotation里面信息{'iamges':[248376字典], 'annotations':[248376字典]}
+"""
+data.json {'images': [248376{10项}],'annotations':[248376{10项}]}
+
+'images': {'id': 0, 'file_name': 's_01_act_02_subact_01_ca_01/s_01_act_02_subact_01_ca_01_000001.jpg', 'width': 1000, 'height': 1002, 'subject': 1, 'action_name': 'Directions', 'action_idx': 2, 'subaction_idx': 1, 'cam_idx': 1, 'frame_idx': 0}
+'annotation': {'id': 0, 'image_id': 0, 'keypoints_vis': [True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True], 'bbox': [402.65667804648615, 262.87433777970045, 127.8323473589618, 404.42892185240856]}
+
+camera.json  R 3x3旋转矩阵, t f c
+{'1': {'1': {'R': [[-0.9153617321513369, 0.40180836633680234, 0.02574754463350265], [0.051548117060134555, 0.1803735689384521, -0.9822464900705729], [-0.399319034032262, -0.8977836111057917, -0.185819527201491]],
+             't': [-346.05078140028075, 546.9807793144001, 5474.481087434061], 
+             'f': [1145.04940458804, 1143.78109572365], 
+             'c': [512.541504956548, 515.4514869776]}, 
+      '2': {'R': [[0.9281683400814921, 0.3721538354721445, 0.002248380248018696], [0.08166409428175585, -0.1977722953267526, -0.976840363061605], [-0.3630902204349604, 0.9068559102440475, -0.21395758897485287]], 
+            't': [251.42516271750836, 420.9422103702068, 5588.195881837821], 
+            'f': [1149.67569986785, 1147.59161666764], 
+            'c': [508.848621645943, 508.064917088557]}, 
+      '3': {'R': [[-0.9141549520542256, -0.40277802228118775, -0.045722952682337906], [-0.04562341383935874, 0.21430849526487267, -0.9756999400261069], [0.4027893093720077, -0.889854894701693, -0.214287280609606]], 
+            't': [480.482559565337, 253.83237471361554, 5704.207679370455], 
+            'f': [1149.14071676148, 1148.7989685676], 'c': [519.815837182153, 501.402658888552]}, 
+      '4': {'R': [[0.9141562410494211, -0.40060705854636447, 0.061905989962380774], [-0.05641000739510571, -0.2769531972942539, -0.9592261660183036], [0.40141783470104664, 0.8733904688919611, -0.2757767409202658]], 
+            't': [51.88347637559197, 378.4208425426766, 4406.149140878431], 
+            'f': [1145.51133842318, 1144.77392807652], 
+            'c': [514.968197319863, 501.882018537695]}}}
+            
+joint_3d.json {'1':{15{{1383{[17[3]]}, 1612{[17[3]]}}}, '5':..., '6', '7', '8'} 17个关节点3d坐标
+smpl_params.json {'1':{15{  {771{{4['pose': [72],
+                                  'shape':[10],
+                                  'trans':[[-0.4410863518714905, 0.3017219305038452, 0.9248735308647156]],
+                                  'fitted_3d_pose‘：[17[3]]}},
+                             {761{{4['pose': [72],
+                                  'shape':[10],
+                                  'trans':[[-0.4392698407173157, 0.07999525964260101, 0.910897970199585]],
+                                  'fitted_3d_pose‘：[17[3]]}}     
+                         }}}, '5':..., '6', '7', '8'}
+"""

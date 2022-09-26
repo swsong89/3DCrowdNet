@@ -32,7 +32,7 @@ class Config:
     lr = 1e-4
     lr_backbone = 1e-4
     lr_dec_factor = 10
-    train_batch_size = 64
+    train_batch_size = 1
     use_gt_info = True
 
     ## testing config

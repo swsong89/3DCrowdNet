@@ -75,7 +75,7 @@ def make_deconv_layers(feat_dims, bnrelu_final=True):
 
 
 class GraphConvBlock(nn.Module):
-    def __init__(self, adj, dim_in, dim_out):
+    def __init__(self, adj, dim_in, dim_out):  # adj=15, dim_in=2052, dim_out=128
         super(GraphConvBlock, self).__init__()
         self.adj = adj  # [15,15]
         self.vertex_num = adj.shape[0]  # [15]
@@ -88,7 +88,7 @@ class GraphConvBlock(nn.Module):
         feat = torch.stack([fcbn(feat[:,i,:]) for i,fcbn in enumerate(self.fcbn_list)],1)  # [1,15,128]= 15个[1,1,128] <- [1,1,2052] 卷积和[128,5012]，一个节点不同维度特征之间的信息加权和，然后需要多少维度做多少次。一层神经元数等于一层特征通道数，每个神经元特征就是HW，
 
         # apply adj
-        adj = self.adj.cuda()[None, :, :].repeat(batch_size,1,1)  # TODO repeat函数是复制，【15，15】 1，1 ->【15，15】 1,2 -> [15,30]
+        adj = self.adj.cuda()[None, :, :].repeat(batch_size, 1, 1)  # TODO repeat函数是复制，【15，15】 1，1 ->【15，15】 1,2 -> [15,30]
         feat = torch.bmm(adj, feat)  # 【1，15，128】 <- [15,15], [1,15,128] 不同节点同纬度特征进行信息交换
 
         # apply activation function

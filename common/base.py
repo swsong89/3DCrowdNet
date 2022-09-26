@@ -63,8 +63,8 @@ class Trainer(Base):
         self.logger.info("Write snapshot into {}".format(file_path))
 
     def load_model(self, model, optimizer):
-        model_file_list = glob.glob(osp.join(cfg.model_dir,'*.pth.tar'))
-        cur_epoch = max([int(file_name[file_name.find('snapshot_') + 9 : file_name.find('.pth.tar')]) for file_name in model_file_list])
+        model_file_list = glob.glob(osp.join(cfg.model_dir, '*.pth.tar'))  # osp.join = '/home/ssw/code/3DCrowdNet/main/../output/exp_09-26_18:18/checkpoint/*.pth.tar'  model_file_list是个列表，包含0 1 2 3...
+        cur_epoch = max([int(file_name[file_name.find('snapshot_') + 9 : file_name.find('.pth.tar')]) for file_name in model_file_list])  # int里面是截取版本数字，比如0,1,2,13迭代版本
         ckpt_path = osp.join(cfg.model_dir, 'snapshot_' + str(cur_epoch) + '.pth.tar')
         ckpt = torch.load(ckpt_path) 
         start_epoch = ckpt['epoch'] + 1
@@ -132,7 +132,7 @@ class Trainer(Base):
             start_epoch, model, optimizer = self.load_model(model, optimizer)
         else:
             start_epoch = 0
-        model.train()
+        model.train()  # 和model.eval相对应，即BN是否计算新的方差，eval,不会计算新的方差，直接用训练的方法数据进行计算，with_no_grad是不保留梯度数据，在测试的时候可以节省显存使用
 
         self.start_epoch = start_epoch
         self.model = model
