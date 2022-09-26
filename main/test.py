@@ -10,10 +10,10 @@ from base import Tester
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--gpu', type=str, dest='gpu_ids')
-    parser.add_argument('--test_epoch', type=str, dest='test_epoch')
-    parser.add_argument('--exp_dir', type=str, default='')
-    parser.add_argument('--cfg', type=str, default='', help='experiment configure file name')
+    parser.add_argument('--gpu', type=str, default='0', dest='gpu_ids')
+    parser.add_argument('--test_epoch', type=str, dest='test_epoch', default='6')
+    parser.add_argument('--exp_dir', type=str, default='/home/ssw/code/3DCrowdNet/output/exp_03-28_18:26')
+    parser.add_argument('--cfg', type=str, default='/home/ssw/code/3DCrowdNet//assets/yaml/3dpw_crowd.yml', help='experiment configure file name')
 
     args = parser.parse_args()
 
