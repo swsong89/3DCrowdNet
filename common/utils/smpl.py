@@ -47,7 +47,7 @@ class SMPL(object):
         # construct graph adj
         self.graph_adj = self.get_graph_adj()  # 构建节点的邻接矩阵
 
-    def reduce_joint_set(self, joint):
+    def reduce_joint_set(self, joint):  # output_hm_shape
         new_joint = []
         for name in self.graph_joints_name:
             idx = self.joints_name.index(name)

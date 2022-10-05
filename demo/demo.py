@@ -70,7 +70,7 @@ def parse_args():
 
 # argument parsing
 args = parse_args()
-cfg.set_args(args.gpu_ids, is_test=True)
+cfg.set_args(args.gpu_ids, is_test=True, no_log=True)
 cfg.render = True
 cudnn.benchmark = True
 
@@ -199,6 +199,10 @@ for img_name in sorted(pose2d_result.keys()):
         inputs = {'img': img, 'joints': coco_joint_img, 'joints_mask': coco_joint_trunc}  # [1,3,256,256] [1,30,3] [1,30,1]
         targets = {}
         meta_info = {'bbox': bbox}
+
+        # 统计模型的参数
+        # total = sum([param.nelement() for param in model.parameters()])
+        # print("Number of parameter: %.2fM" % (total / 1e6))   # 30.54M
         with torch.no_grad():
             out = model(inputs, targets, meta_info, 'test')
         '''

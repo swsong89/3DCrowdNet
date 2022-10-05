@@ -13,7 +13,7 @@ def denorm_joints(pose_out_img, body_bb2img_trans):
 
     return pose_out_img
 
-def cam2pixel(cam_coord, f, c):  # [17,3] f焦距 [2] c像中点 [2]
+def cam2pixel(cam_coord, f, c):  # [17,3] f焦距 [2] 1145.0494, 1143.7811 c像中点 [2] 512.5415 515.4515， 相机坐标转像素坐标，实际上是先利用焦距f专程图像坐标，在利用像中点c和dx,dy转成像素坐标
     x = cam_coord[:,0] / cam_coord[:,2] * f[0] + c[0]
     y = cam_coord[:,1] / cam_coord[:,2] * f[1] + c[1]
     z = cam_coord[:,2]
@@ -33,13 +33,13 @@ def cam2world(cam_coord, R, t):
     world_coord = np.dot(np.linalg.inv(R), (cam_coord - t.reshape(1,3)).transpose(1,0)).transpose(1,0)
     return world_coord
 
-def rigid_transform_3D(A, B):
+def rigid_transform_3D(A, B):  # [14,3]
     n, dim = A.shape
-    centroid_A = np.mean(A, axis = 0)
-    centroid_B = np.mean(B, axis = 0)
-    H = np.dot(np.transpose(A - centroid_A), B - centroid_B) / n
-    U, s, V = np.linalg.svd(H)
-    R = np.dot(np.transpose(V), np.transpose(U))
+    centroid_A = np.mean(A, axis = 0)  # 14个关节点的平均坐标
+    centroid_B = np.mean(B, axis = 0)  #
+    H = np.dot(np.transpose(A - centroid_A), B - centroid_B) / n  # H [3,3]矩阵，A - centroid_A [3,14] B - centroid_B [14,3],n=3表示3维
+    U, s, V = np.linalg.svd(H)  # U [3,3] s [3] V [3,3]
+    R = np.dot(np.transpose(V), np.transpose(U))  # [3,3]
     if np.linalg.det(R) < 0:
         s[-1] = -s[-1]
         V[2] = -V[2]
@@ -53,7 +53,7 @@ def rigid_transform_3D(A, B):
 
 def rigid_align(A, B):
     c, R, t = rigid_transform_3D(A, B)
-    A2 = np.transpose(np.dot(c*R, np.transpose(A))) + t
+    A2 = np.transpose(np.dot(c*R, np.transpose(A))) + t  # A2[14,3]
     return A2
 
 def transform_joint_to_other_db(src_joint, src_name, dst_name):  # src_joint [19,3]

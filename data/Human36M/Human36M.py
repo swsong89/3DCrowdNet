@@ -149,7 +149,7 @@ class Human36M(torch.utils.data.Dataset):
             # project world coordinate to cam, image coordinate space
             joint_world = np.array(joints[str(subject)][str(action_idx)][str(subaction_idx)][str(frame_idx)], dtype=np.float32)
             joint_cam = world2cam(joint_world, R, t)  # 世界坐标转相机坐标
-            joint_img = cam2pixel(joint_cam, f, c)  # 相机坐标转像素坐标
+            joint_img = cam2pixel(joint_cam, f, c)  # 相机坐标转像素坐标, 此时像素即图片空间为img_shape 1002 1000,c像中点 [2] 512.5415 515.4515,实际上中点就是中心c坐标像素
             joint_valid = np.ones((self.h36m_joint_num, 1))
 
             tight_bbox = np.array(ann['bbox'])  # 更紧促的bbox,因为human3.6是先捕捉的关节点，然后手动确定Bbox [213.92976 212.44571 504.28616 504.28616]

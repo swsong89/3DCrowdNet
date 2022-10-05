@@ -38,7 +38,7 @@ class PW3D(torch.utils.data.Dataset):
         # H36M joint set
         self.h36m_joints_name = ('Pelvis', 'R_Hip', 'R_Knee', 'R_Ankle', 'L_Hip', 'L_Knee', 'L_Ankle', 'Torso', 'Neck', 'Nose', 'Head_top', 'L_Shoulder', 'L_Elbow', 'L_Wrist', 'R_Shoulder', 'R_Elbow', 'R_Wrist')
         self.h36m_root_joint_idx = self.h36m_joints_name.index('Pelvis')
-        self.h36m_eval_joint = (1, 2, 3, 4, 5, 6, 8, 10, 11, 12, 13, 14, 15, 16)
+        self.h36m_eval_joint = (1, 2, 3, 4, 5, 6, 8, 10, 11, 12, 13, 14, 15, 16)  # RHip
         self.h36m_joint_regressor = np.load(osp.join('..', 'data', 'Human36M', 'J_regressor_h36m_correct.npy'))
 
         # mscoco skeleton
@@ -53,6 +53,9 @@ class PW3D(torch.utils.data.Dataset):
 
         self.datalist = self.load_data()
         print("3dpw data len: ", len(self.datalist))
+
+        self.pose_coord_gt_h36m_list = []
+        self.pose_coord_out_h36m_list = []
 
     def add_pelvis(self, joint_coord, joints_name):
         lhip_idx = joints_name.index('L_Hip')
@@ -177,6 +180,36 @@ class PW3D(torch.utils.data.Dataset):
 
         return smpl_mesh_coord, smpl_joint_coord
 
+    def compute_error_accel(self, joints_gt, joints_pred, vis=None):
+        """
+        Computes acceleration error:
+            1/(n-2) \sum_{i=1}^{n-1} X_{i-1} - 2X_i + X_{i+1}
+        Note that for each frame that is not visible, three entries in the
+        acceleration error should be zero'd out.
+        Args:
+            joints_gt (Nx14x3).
+            joints_pred (Nx14x3).
+            vis (N).
+        Returns:
+            error_accel (N-2).
+        """
+        # (N-2)x14x3
+        accel_gt = joints_gt[:-2] - 2 * joints_gt[1:-1] + joints_gt[2:]  # 速度(p1-p0), (p2-p1), (p3-p2).. 加速度 (p2-p1) - (p1-p0) = p2 - 2*p1 + p0
+        accel_pred = joints_pred[:-2] - 2 * joints_pred[1:-1] + joints_pred[2:]
+
+        normed = np.linalg.norm(accel_pred - accel_gt, axis=2)  #  相减之后每行是3d坐标帧的加速度误差，然后3个加速度误差取平方根
+
+        if vis is None:
+            new_vis = np.ones(len(normed), dtype=bool)
+        else:
+            invis = np.logical_not(vis)
+            invis1 = np.roll(invis, -1)
+            invis2 = np.roll(invis, -2)
+            new_invis = np.logical_or(invis, np.logical_or(invis1, invis2))[:-2]
+            new_vis = np.logical_not(new_invis)
+
+        return np.mean(normed[new_vis], axis=1)
+
     def __len__(self):
         return len(self.datalist)
 
@@ -257,25 +290,29 @@ class PW3D(torch.utils.data.Dataset):
         meta_info = {'bb2img_trans': bb2img_trans, 'img2bb_trans': img2bb_trans, 'bbox': bbox, 'tight_bbox': data['tight_bbox'], 'aid': aid}
         return inputs, targets, meta_info
 
-    def evaluate(self, outs, cur_sample_idx):
+    def evaluate(self, outs, cur_sample_idx):  # outs大小为64,因为batch_size是64，64帧图片, cur_sample_idx当前的batch序号，相当于第几次采样
         annots = self.datalist
         sample_num = len(outs)
         eval_result = {'mpjpe': [], 'pa_mpjpe': [], 'mpvpe': []}
+
         for n in range(sample_num):
             annot = annots[cur_sample_idx + n]
             out = outs[n]
 
-            # h36m joint from gt mesh
-            mesh_gt_cam = out['smpl_mesh_cam_target']
-            pose_coord_gt_h36m = np.dot(self.h36m_joint_regressor, mesh_gt_cam)
+            # h36m joint from gt mesh, 从mesh_gt_cam得到相对于根节点的pose_coord_gt_h36m[14,3]交集节点， mesh_gt_cam [6890,3]
+            mesh_gt_cam = out['smpl_mesh_cam_target']  # target的smpl_mesh_cam数据 [6890,3]
+            pose_coord_gt_h36m = np.dot(self.h36m_joint_regressor, mesh_gt_cam)  # 由真实的Mesh得到的h36m 3d坐标
             # debug
             root_h36m_gt = pose_coord_gt_h36m[self.h36m_root_joint_idx, :]
-            pose_gt_img = cam2pixel(pose_coord_gt_h36m, annot['cam_param']['focal'], annot['cam_param']['princpt'])
-            pose_gt_img = transform_joint_to_other_db(pose_gt_img, self.h36m_joints_name, self.smpl.graph_joints_name)
+            pose_gt_img = cam2pixel(pose_coord_gt_h36m, annot['cam_param']['focal'], annot['cam_param']['princpt'])  # [17,3] 转到像素坐标，即图片中
+            pose_gt_img = transform_joint_to_other_db(pose_gt_img, self.h36m_joints_name, self.smpl.graph_joints_name)  # [15,3] 转到图卷积定义的交集
 
-            pose_coord_gt_h36m = pose_coord_gt_h36m - pose_coord_gt_h36m[self.h36m_root_joint_idx, None]  # root-relative
-            pose_coord_gt_h36m = pose_coord_gt_h36m[self.h36m_eval_joint, :]
-            mesh_gt_cam -= np.dot(self.joint_regressor, mesh_gt_cam)[0, None, :]
+            pose_coord_gt_h36m = pose_coord_gt_h36m - pose_coord_gt_h36m[self.h36m_root_joint_idx, None]  # root-relative  [17,3]
+            pose_coord_gt_h36m = pose_coord_gt_h36m[self.h36m_eval_joint, :]  # [14,3]  h36m_eval_joint只有14个点,其中pelvis根节点省略
+            mesh_gt_cam -= np.dot(self.joint_regressor, mesh_gt_cam)[0, None, :]  # [6890,3] 转到相对位置上,可以不用再次计算，直接用debug上面的pose_coord_gt_h36m[0,None,:]
+
+            # accel_error
+            self.pose_coord_gt_h36m_list.append(pose_coord_gt_h36m)
 
             # TEMP: use PositionNet output
             # pose_out_img = out['joint_img']
@@ -286,20 +323,24 @@ class PW3D(torch.utils.data.Dataset):
 
             # h36m joint from output mesh
             mesh_out_cam = out['smpl_mesh_cam']
-            pose_coord_out_h36m = np.dot(self.h36m_joint_regressor, mesh_out_cam)
+            pose_coord_out_h36m = np.dot(self.h36m_joint_regressor, mesh_out_cam)  # [17,3]
             # # debug
             # pose_out_img = cam2pixel(pose_coord_out_h36m + root_h36m_gt, annot['cam_param']['focal'], annot['cam_param']['princpt'])
             # pose_out_img = transform_joint_to_other_db(pose_out_img, self.h36m_joints_name, self.smpl.graph_joints_name)
 
-            pose_coord_out_h36m = pose_coord_out_h36m - pose_coord_out_h36m[self.h36m_root_joint_idx, None]  # root-relative
-            pose_coord_out_h36m = pose_coord_out_h36m[self.h36m_eval_joint, :]
-            pose_coord_out_h36m_aligned = rigid_align(pose_coord_out_h36m, pose_coord_gt_h36m)
+            pose_coord_out_h36m = pose_coord_out_h36m - pose_coord_out_h36m[self.h36m_root_joint_idx, None]  # root-relative [17,3]
+            pose_coord_out_h36m = pose_coord_out_h36m[self.h36m_eval_joint, :]  # [14,3]
+            pose_coord_out_h36m_aligned = rigid_align(pose_coord_out_h36m, pose_coord_gt_h36m)  # Pa 对齐 [14,3], 将output与gt Pa对齐
+            mesh_out_cam -= np.dot(self.joint_regressor, mesh_out_cam)[0, None, :]
+
+            # accel_error
+            self.pose_coord_out_h36m_list.append(pose_coord_out_h36m)
+
 
             eval_result['mpjpe'].append(np.sqrt(
                 np.sum((pose_coord_out_h36m - pose_coord_gt_h36m) ** 2, 1)).mean() * 1000)  # meter -> milimeter
             eval_result['pa_mpjpe'].append(np.sqrt(np.sum((pose_coord_out_h36m_aligned - pose_coord_gt_h36m) ** 2,
                                                           1)).mean() * 1000)  # meter -> milimeter
-            mesh_out_cam -= np.dot(self.joint_regressor, mesh_out_cam)[0, None, :]
 
             # compute MPVPE
             mesh_error = np.sqrt(np.sum((mesh_gt_cam - mesh_out_cam) ** 2, 1)).mean() * 1000
@@ -364,9 +405,17 @@ class PW3D(torch.utils.data.Dataset):
         return eval_result
 
     def print_eval_result(self, eval_result):
+        # 计算accel_err
+        pose_coord_gt_h36ms = np.array(self.pose_coord_gt_h36m_list)
+        pose_coord_out_h36ms = np.array(self.pose_coord_out_h36m_list)
+        accel_err = self.compute_error_accel(joints_pred=pose_coord_out_h36ms, joints_gt=pose_coord_gt_h36ms).mean() * 1000
+        eval_result['accel'] = accel_err
+
         print('MPJPE from mesh: %.2f mm' % np.mean(eval_result['mpjpe']))
         print('PA MPJPE from mesh: %.2f mm' % np.mean(eval_result['pa_mpjpe']))
         print('MPVPE from mesh: %.2f mm' % np.mean(eval_result['mpvpe']))
+
+        print('Accelerate from mesh: %.2f mm' % eval_result['accel'])
 
 
 

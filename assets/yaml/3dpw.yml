@@ -1,5 +1,5 @@
-trainset_3d: ['Human36M', 'MuCo']
-trainset_2d: ['MSCOCO', 'MPII']
+trainset_3d: ['Human36M']
+trainset_2d: ['MSCOCO']
 testset: 'PW3D'
 
 lr_dec_epoch: [10]

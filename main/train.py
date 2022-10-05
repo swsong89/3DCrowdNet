@@ -8,7 +8,7 @@ import torch.cuda.amp as amp
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--gpu', type=str, dest='gpu_ids', default='2')
+    parser.add_argument('--gpu', type=str, dest='gpu_ids', default='0')
     parser.add_argument('--continue', dest='continue_train', action='store_true')
     parser.add_argument('--exp_dir', type=str, default='', help='for resuming train')
     parser.add_argument('--amp', dest='use_mixed_precision', action='store_true', help='use automatic mixed precision training')
@@ -50,7 +50,7 @@ def main():
         trainer.set_lr(epoch)
         trainer.tot_timer.tic()
         trainer.read_timer.tic()
-        for itr, (inputs, targets, meta_info) in enumerate(trainer.batch_generator):  # inputs = {'img': [16,3,256,256], 'joints':[16,30,2], 'joints_mask':[16,30,1]} 虽然30个点，但是coco数据只有17个点有数据，其余都是0
+        for itr, (inputs, targets, meta_info) in enumerate(trainer.batch_generator):  # inputs = {'img': [16,3,256,256], 'joints':[16,30,2], 'joints_mask':[16,30,1]} 虽然30个点，但是coco数据只有17个点有数据，其余都是0，targets={'orig_joint_img', 'fit_joint_img','origin_joint_cam', 'fit_joint_cam', 'pose_param', 'shape_param'} meta_info {'orig_joint_vald': [1,30,1], 'origin_joint_truc':[1,30,1], 'fit_param_valid':[1,72], 'fit_joint_truc':[1,30,1], 'is_valid_fit':[1], 'is_3D':[1]}
             trainer.read_timer.toc()
             trainer.gpu_timer.tic()
 
