@@ -129,7 +129,7 @@ for img_name in sorted(pose2d_result.keys()):
     input = original_img.copy()
     input2 = original_img.copy()  # cv2.imread会将图片读成B\G\R,
     original_img_height, original_img_width = original_img.shape[:2]  # 346, 500
-    coco_joint_list = pose2d_result[img_name]  # pose2d_result是一个图片对应坐标的字典，所以是取该图片对应的2d pose
+    coco_joint_list = pose2d_result[img_name]  # pose2d_result是一个图片对应坐标的字典，所以是取该图片对应的2d pose, x,y,confidence,不知道，不知道
 
     if args.img_idx not in img_name:
         continue
@@ -142,7 +142,7 @@ for img_name in sorted(pose2d_result.keys()):
     for idx in range(len(coco_joint_list)):
         """ 2D pose input setting & hard-coding for filtering """
         pose_thr = 0.1
-        coco_joint_img = np.asarray(coco_joint_list[idx])[:, :3]  # [17, 3], coco5个值的前3个
+        coco_joint_img = np.asarray(coco_joint_list[idx])[:, :3]  # [17, 3], coco5个值的前3个 [346, 500, 3] 93.81104, 182.68994,0.85222
         coco_joint_img = add_pelvis(coco_joint_img, coco_joints_name)  # 取l_hip和r_hip的中点为pevis
         coco_joint_img = add_neck(coco_joint_img, coco_joints_name)  # 取l_shoulder, r_shouder中点为neck  # 【19，3】
         coco_joint_valid = (coco_joint_img[:, 2].copy().reshape(-1, 1) > pose_thr).astype(np.float32) # coco_joint_img[:, 2] [19] reshape后变成[19, 1]  第5个 0 R_ear 置信度 0.02976
@@ -177,16 +177,18 @@ for img_name in sorted(pose2d_result.keys()):
         bbox = process_bbox(bbox, original_img_width, original_img_height)  # 1.根据原始图像h,w处理bbox不要越界，2.按照cfg.input_img_shape缩小或放大bbox高宽比 3.增加容错能力bbox_h,w变成1.25倍 [ 41.84253 159.10278 110.26123 110.26123]
         if bbox is None:
             continue
-        img, img2bb_trans, bb2img_trans = generate_patch_image(input2[:,:,::-1], bbox, 1.0, 0.0, False, cfg.input_img_shape)  # B\G\R->R\G\B img 【346， 500，3】 -> [256,256,3], img2bb_trans是图像直接转网络输入bbox
+        img, img2bb_trans, bb2img_trans = generate_patch_image(input2[:,:,::-1], bbox, 1.0, 0.0, False, cfg.input_img_shape)  # B\G\R->R\G\B img [346, 500, 3] -> [256,256,3], img2bb_trans是图像直接转网络输入bbox  cfg.input_img_shape [256,2556,3]
         img = transform(img.astype(np.float32))/255  # img [3,256,256]
         img = img.cuda()[None,:,:,:]  # img [1,3,256,256]
         # 下面将coco坐标由原始图像转到hm热力图图像中
-        coco_joint_img_xy1 = np.concatenate((coco_joint_img[:, :2], np.ones_like(coco_joint_img[:, :1])), 1)  # 将每个关节点坐标的置信度都变成1
-        coco_joint_img[:, :2] = np.dot(img2bb_trans, coco_joint_img_xy1.transpose(1, 0)).transpose(1, 0)  # 因为trans是根据hwc旋转的，所以需要xy旋转变成yx才可以
+        #  img2bb_trans 2.32176,0.00000,-97.14827
+        #               0.00000,2.32176,-369.39832
+        coco_joint_img_xy1 = np.concatenate((coco_joint_img[:, :2], np.ones_like(coco_joint_img[:, :1])), 1)  # coco_joint_img_xy1 [19,3] 将每个关节点坐标的置信度都变成1 93.81104, 182.68994,1
+        coco_joint_img[:, :2] = np.dot(img2bb_trans, coco_joint_img_xy1.transpose(1, 0)).transpose(1, 0)  # img2bb_trans [2,3] coco_joint_img_xy1.transpose(1, 0) [3,19]因为trans是根据hwc旋转的，所以需要xy旋转变成yx才可以 120.65834,54.76370,0.85222
         coco_joint_img[:, 0] = coco_joint_img[:, 0] / cfg.input_img_shape[1] * cfg.output_hm_shape[2]  # coco_joint_img[:, 0] x  cfg.input_img_shape[1] w  output_hm_shape[2] w
-        coco_joint_img[:, 1] = coco_joint_img[:, 1] / cfg.input_img_shape[0] * cfg.output_hm_shape[1]
+        coco_joint_img[:, 1] = coco_joint_img[:, 1] / cfg.input_img_shape[0] * cfg.output_hm_shape[1] #  30.16459,13.69092,0.85222    之前的 93.81104, 182.68994,0.85222
 
-        coco_joint_img = transform_joint_to_other_db(coco_joint_img, coco_joints_name, joints_name)  # 将coco关节点转到定义的超关节点网络中
+        coco_joint_img = transform_joint_to_other_db(coco_joint_img, coco_joints_name, joints_name)  # 将coco关节点转到定义的超关节点网络中 93.81104,182.68994,0.85222
         coco_joint_valid = transform_joint_to_other_db(coco_joint_valid, coco_joints_name, joints_name)
         coco_joint_valid[coco_joint_img[:, 2] <= pose_thr] = 0
 
@@ -196,8 +198,8 @@ for img_name in sorted(pose2d_result.keys()):
         coco_joint_img, coco_joint_trunc, bbox = torch.from_numpy(coco_joint_img).cuda()[None, :, :], torch.from_numpy(coco_joint_trunc).cuda()[None, :, :], torch.from_numpy(bbox).cuda()[None, :]
         # coco_joint_img [1,30,3]  coco_joint_trunc[1,30,1] bbox变成符合input_img_shape的bbox [[ 41.8425, 159.1028, 110.2612, 110.2612]]
         """ Model forward """
-        inputs = {'img': img, 'joints': coco_joint_img, 'joints_mask': coco_joint_trunc}  # [1,3,256,256] [1,30,3] [1,30,1]
-        targets = {}
+        inputs = {'img': img, 'joints': coco_joint_img, 'joints_mask': coco_joint_trunc}  # [1,3,256,256] [1,30,3] [1,30,1] 256，256真实坐标点
+        targets = {}  # coco_joint_img[0,0]= [35.9038, 36.7541,  0.1595]
         meta_info = {'bbox': bbox}
 
         # 统计模型的参数

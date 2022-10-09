@@ -30,11 +30,11 @@ data/MSCOCO/val2017
 
 # output
 output/
-
 # demo
 demo/input
 demo/output
 *.pyc
+*.pth
 
 # tool
 tool/archive/*

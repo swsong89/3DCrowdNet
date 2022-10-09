@@ -41,7 +41,7 @@ class Human36M(torch.utils.data.Dataset):
         self.h36m_root_joint_idx = self.h36m_joints_name.index('Pelvis')
         self.h36m_eval_joint = (1, 2, 3, 4, 5, 6, 8, 10, 11, 12, 13, 14, 15, 16)  # 没有pelvis盆骨, torso躯干, Nose鼻子，
         self.h36m_joint_regressor = np.load(osp.join('..', 'data', 'Human36M', 'J_regressor_h36m_correct.npy'))
-        self.h36m_coco_common_jidx = (1, 2, 3, 4, 5, 6, 9, 11, 12, 13, 14, 15, 16)  # for posefix, exclude pelvis 没有pelvis盆骨,  torso躯干, neck, Head_top,
+        self.h36m_coco_common_jidx = (1, 2, 3, 4, 5, 6, 9, 11, 12, 13, 14, 15, 16)  # 13 for posefix, exclude pelvis 没有pelvis盆骨,  torso躯干, neck, Head_top,
 
         # SMPL joint set
         self.smpl = SMPL()

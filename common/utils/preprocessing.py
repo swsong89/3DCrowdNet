@@ -140,6 +140,7 @@ def augmentation(img, bbox, data_split, exclude_flip=False):
 
 
 def generate_patch_image(cvimg, bbox, scale, rot, do_flip, out_shape):  # rot旋转 do_flip翻转, 函数作用是处理输入图像，根据do_flip, scale, rotation处理bbox,然后转到网络输入图像尺寸
+    # cvimg [346, 500, 3] scale=1, rot=0, do_flip=False, out_shape=[256,256,3]
     img = cvimg.copy()
     img_height, img_width, img_channels = img.shape
    
@@ -153,9 +154,10 @@ def generate_patch_image(cvimg, bbox, scale, rot, do_flip, out_shape):  # rot旋
         bb_c_x = img_width - bb_c_x - 1  # 和process_bbox函数中img_width-1一样
 
     trans = gen_trans_from_patch_cv(bb_c_x, bb_c_y, bb_width, bb_height, out_shape[1], out_shape[0], scale, rot)  # 将原图转到输入图片的旋转角，trans = [[ 2.3217590e+00  0.0000000e+00 -9.7148270e+01], [ 3.7371475e-16  2.3217590e+00 -3.6939832e+02]]
+    # 利用trans仿射变换矩阵直接将img转成input_img，trans是由bbox大小和input_img得到的
     img_patch = cv2.warpAffine(img, trans, (int(out_shape[1]), int(out_shape[0])), flags=cv2.INTER_LINEAR)  # 直接将原图img根据旋转trans处理得到网络输入  TODO 看明白函数cv2.warpAffine
     img_patch = img_patch.astype(np.float32)  # [256， 256，3】
-    inv_trans = gen_trans_from_patch_cv(bb_c_x, bb_c_y, bb_width, bb_height, out_shape[1], out_shape[0], scale, rot, inv=True)  #将输入图反转换到原图的旋转角
+    inv_trans = gen_trans_from_patch_cv(bb_c_x, bb_c_y, bb_width, bb_height, out_shape[1], out_shape[0], scale, rot, inv=True)  #将input_img转成orig_img [346, 500, 3]
 
     return img_patch, trans, inv_trans
 
@@ -169,6 +171,7 @@ def rotate_2d(pt_2d, rot_rad):  # pt_2d= [ 0, 55.130615] rot_rad=0
 
 def gen_trans_from_patch_cv(c_x, c_y, src_width, src_height, dst_width, dst_height, scale, rot, inv=False): # 根据bbox信息，目标图像的w,h,以及bbox需要放大缩小的尺寸scale,需要旋转的角度rot得到旋转处理信息
     # augment size with scale scale的作用是应该将bbox放大多少 TODO 需要搞明白是如何处理得到trans，然后原始图像如何根据trans据可以得到目标图像
+    # 根据src三个点，dst三个点，分别为中心点，右边的点，下边的点，三个对应点求出的仿射变换矩阵，利用这个矩阵可以直接将bbox
     src_w = src_width * scale  # src_w=110.26123046875
     src_h = src_height * scale # src_h=110.26123046875
     src_center = np.array([c_x, c_y], dtype=np.float32)
@@ -185,14 +188,14 @@ def gen_trans_from_patch_cv(c_x, c_y, src_width, src_height, dst_width, dst_heig
     dst_rightdir = np.array([dst_w * 0.5, 0], dtype=np.float32)  # [128.   0.]
 
     src = np.zeros((3, 2), dtype=np.float32)
-    src[0, :] = src_center  # [ 96.973145 214.2334  ]
-    src[1, :] = src_center + src_downdir  # [ 96.973145 269.364   ] =  [ 96.973145 214.2334  ] +  [ 0.       55.130615]
-    src[2, :] = src_center + src_rightdir  # [152.10376 214.2334 ]
+    src[0, :] = src_center  # [ 96.973145 214.2334  ] 框中心
+    src[1, :] = src_center + src_downdir  # [ 96.973145 269.364   ] =  [ 96.973145 214.2334  ] +  [ 0.       55.130615] 框右边宽度
+    src[2, :] = src_center + src_rightdir  # [152.10376 214.2334 ] 框坐标宽度
 
     dst = np.zeros((3, 2), dtype=np.float32)
-    dst[0, :] = dst_center
-    dst[1, :] = dst_center + dst_downdir
-    dst[2, :] = dst_center + dst_rightdir
+    dst[0, :] = dst_center  # [128,128] 框中心
+    dst[1, :] = dst_center + dst_downdir  # [128,256] 框右边宽度
+    dst[2, :] = dst_center + dst_rightdir  # [256,128] 框坐标宽度
     
     if inv:
         trans = cv2.getAffineTransform(np.float32(dst), np.float32(src))

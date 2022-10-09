@@ -53,7 +53,7 @@ def parse_args():
 
 # argument parsing
 args = parse_args()
-cfg.set_args(args.gpu_ids, is_summary=True)
+cfg.set_args(args.gpu_ids, no_log=True)
 cfg.render = True
 cudnn.benchmark = True
 
@@ -73,26 +73,31 @@ model.load_state_dict(ckpt['network'], strict=False)
 model.eval()
 model.cuda()
 
+method = []  # 'inner' 'torchsummary' 'thop'
+
 # 统计模型每层输入输出情况
 summary(model, [(3, 256, 256), (30, 3), (30, 1), (4,)], batch_size=1)  # Total params: 30,208,169 30.208M
 
 
-# 默认方法 统计参数量
-# total = sum([param.nelement() for param in model.parameters()])
-# print("Number of parameter: %.2fM" % (total / 1e6))   # 30.54M  不准,里面有重复项
+if 'inner' in method:
+    # 默认方法 统计参数量
+    total = sum([param.nelement() for param in model.parameters()])
+    print("Number of parameter: %.2fM" % (total / 1e6))   # 30.54M  不准,里面有重复项
 
+if 'thop' in method:
+    # thop 统计参数量和运算量
+    input1 = torch.randn(1, 3, 256, 256).cuda()
+    input2 = torch.randn(1, 30, 3).cuda()
+    input3 = torch.randn(1, 30, 1).cuda()
+    input4 = torch.randn(1, 4).cuda()
 
-# thop 统计参数量和运算量
-# input1 = torch.randn(1, 3, 256, 256).cuda()
-# input2 = torch.randn(1, 30, 3).cuda()
-# input3 = torch.randn(1, 30, 1).cuda()
-# input4 = torch.randn(1, 4).cuda()
-#
-# flops, params = profile(model, inputs=(input1, input2, input3, input4))
-# print(flops, params)  # 5641332352.0 30208169.0
-#
-# flops, params = clever_format([flops, params], '%.3f')
-# print(flops, params)  # 5.641G 30.208M
+    flops, params = profile(model, inputs=(input1, input2, input3, input4))
+    flops, params = clever_format([flops, params], '%.3f')
+
+    print('3dcrowd')
+    print(flops, params)  # 3dcrowd 5641332352.0 30208169.0   MPS 4449988336.0 36154082.0
+    print(flops, params)  # 3DCrowdNet 5.641G 30.208M  MPS 4.450G 36.154M
+    # 3DCrowd 382.1MB mps model 108.2MB + resnet model 239.5MB  total model 397.7MB  论文写是331MB
 
 
 """ torchsummary需要修改的地方

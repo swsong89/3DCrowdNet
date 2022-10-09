@@ -63,3 +63,31 @@ class SMPL(object):
 
     def get_layer(self, gender='neutral'):
         return SMPL_Layer(gender=gender, model_root=cfg.smpl_path + '/smplpytorch/native/models')
+
+"""
+self.j_names = {
+    0: 'Pelvis',
+    1: 'L_Hip',  2: 'R_Hip',
+    3:  'Spine1',
+    4: 'L_Knee',  5: 'R_Knee',
+    6:  'Spine2',
+    7:  'L_Ankle', 8: 'R_Ankle',
+    9:  'Spine3',
+    10: 'L_Foot', 11: 'R_Foot',
+    12: 'Neck',
+    13: 'L_Collar', 14: 'R_Collar',
+    15: 'Head',
+    16: 'L_Shoulder', 17: 'R_Shoulder',
+    18: 'L_Elbow',  19: 'R_Elbow',
+    20: 'L_Wrist',  21: 'R_Wrist',
+    22: 'L_Hand', 23: 'R_Hand'
+    }
+SMPL   24个关节点  23个身体关节点 + 1个根关节点pevis
+SMPLH  51个关节点  51个身体关节点 21个除了左右手关节点 + 2*15手关节点, 用15个复杂手关节点替代简单的手关节点
+SMPLX  55个关节点  54个身体关节点 21个除了左右手关节点 + 2*15手关节点 + 3脸关节点, 猜脸关节点是jaw, eyeballs， 下巴，左右眼球
+
+'Pelvis', 
+'L_Hip', 'R_Hip', 'Torso', 'L_Knee', 'R_Knee', 'Spine', 'L_Ankle', 'R_Ankle', 'Chest', 'L_Toe', 'R_Toe', 'Neck', 'L_Thorax', 'R_Thorax',
+                            'Head', 'L_Shoulder', 'R_Shoulder', 'L_Elbow', 'R_Elbow', 'L_Wrist', 'R_Wrist', 'L_Hand', 'R_Hand', 'Nose', 'L_Eye', 'R_Eye', 'L_Ear', 'R_Ear', 'Head_top')
+
+"""
