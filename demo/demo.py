@@ -129,7 +129,7 @@ for img_name in sorted(pose2d_result.keys()):
     input = original_img.copy()
     input2 = original_img.copy()  # cv2.imread会将图片读成B\G\R,
     original_img_height, original_img_width = original_img.shape[:2]  # 346, 500
-    coco_joint_list = pose2d_result[img_name]  # pose2d_result是一个图片对应坐标的字典，所以是取该图片对应的2d pose, x,y,confidence,不知道，不知道
+    coco_joint_list = pose2d_result[img_name]  # pose2d_result是一个图片对应坐标的字典，所以是取该图片对应的2d pose, 坐标 x,y,confidence,不知道，不知道
 
     if args.img_idx not in img_name:
         continue
@@ -180,14 +180,14 @@ for img_name in sorted(pose2d_result.keys()):
         img, img2bb_trans, bb2img_trans = generate_patch_image(input2[:,:,::-1], bbox, 1.0, 0.0, False, cfg.input_img_shape)  # B\G\R->R\G\B img [346, 500, 3] -> [256,256,3], img2bb_trans是图像直接转网络输入bbox  cfg.input_img_shape [256,2556,3]
         img = transform(img.astype(np.float32))/255  # img [3,256,256]
         img = img.cuda()[None,:,:,:]  # img [1,3,256,256]
-        # 下面将coco坐标由原始图像转到hm热力图图像中
-        #  img2bb_trans 2.32176,0.00000,-97.14827
+        # 下面将coco坐标由原始图像转到hm热力图图像中  img2bb_trans 原始图片[346,500] 到[256,256] hw
+        #  img2bb_trans 2.32176,0.00000,-97.14827 仿射变换矩阵，矩阵是高度宽度变换的，所以坐标需要transpose到1,0
         #               0.00000,2.32176,-369.39832
         coco_joint_img_xy1 = np.concatenate((coco_joint_img[:, :2], np.ones_like(coco_joint_img[:, :1])), 1)  # coco_joint_img_xy1 [19,3] 将每个关节点坐标的置信度都变成1 93.81104, 182.68994,1
-        coco_joint_img[:, :2] = np.dot(img2bb_trans, coco_joint_img_xy1.transpose(1, 0)).transpose(1, 0)  # img2bb_trans [2,3] coco_joint_img_xy1.transpose(1, 0) [3,19]因为trans是根据hwc旋转的，所以需要xy旋转变成yx才可以 120.65834,54.76370,0.85222
+        coco_joint_img[:, :2] = np.dot(img2bb_trans, coco_joint_img_xy1.transpose(1, 0)).transpose(1, 0)  # 坐标由[346,500]空间变到[256,256]img2bb_trans [2,3] coco_joint_img_xy1.transpose(1, 0) [3,19]因为trans是根据hwc旋转的，所以需要xy旋转变成yx才可以 120.65834,54.76370,0.85222
         coco_joint_img[:, 0] = coco_joint_img[:, 0] / cfg.input_img_shape[1] * cfg.output_hm_shape[2]  # coco_joint_img[:, 0] x  cfg.input_img_shape[1] w  output_hm_shape[2] w
         coco_joint_img[:, 1] = coco_joint_img[:, 1] / cfg.input_img_shape[0] * cfg.output_hm_shape[1] #  30.16459,13.69092,0.85222    之前的 93.81104, 182.68994,0.85222
-
+        # 坐标由input_img_shape 256,256转到Output_hm_shape 64,64
         coco_joint_img = transform_joint_to_other_db(coco_joint_img, coco_joints_name, joints_name)  # 将coco关节点转到定义的超关节点网络中 93.81104,182.68994,0.85222
         coco_joint_valid = transform_joint_to_other_db(coco_joint_valid, coco_joints_name, joints_name)
         coco_joint_valid[coco_joint_img[:, 2] <= pose_thr] = 0

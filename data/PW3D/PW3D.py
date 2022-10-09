@@ -411,11 +411,13 @@ class PW3D(torch.utils.data.Dataset):
         accel_err = self.compute_error_accel(joints_pred=pose_coord_out_h36ms, joints_gt=pose_coord_gt_h36ms).mean() * 1000
         eval_result['accel'] = accel_err
 
-        print('MPJPE from mesh: %.2f mm' % np.mean(eval_result['mpjpe']))
-        print('PA MPJPE from mesh: %.2f mm' % np.mean(eval_result['pa_mpjpe']))
-        print('MPVPE from mesh: %.2f mm' % np.mean(eval_result['mpvpe']))
-
-        print('Accelerate from mesh: %.2f mm' % eval_result['accel'])
+        result_str = ""
+        result_str += 'MPJPE from mesh: %.2f mm' % np.mean(eval_result['mpjpe'])
+        result_str += '\n' + 'PA MPJPE from mesh: %.2f mm' % np.mean(eval_result['pa_mpjpe'])
+        result_str += '\n' + 'MPVPE from mesh: %.2f mm' % np.mean(eval_result['mpvpe'])
+        # result_str += '\n' + 'Accel from mesh: %.2f mm' % eval_result['accel']
+        print(result_str)
+        return result_str
 
 
 

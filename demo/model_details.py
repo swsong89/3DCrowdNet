@@ -820,6 +820,9 @@ Pose2Feat(
     (rot_decoder): ContinousRotReprDecoder()
     (bodyprior_dec_out): Linear(in_features=512, out_features=126, bias=True)
   )
+  (human_model_layer): SMPL_Layer()
+  (coord_loss): CoordLoss()
+  (param_loss): ParamLoss()
 )"""
 
 

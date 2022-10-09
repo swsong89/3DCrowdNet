@@ -20,7 +20,7 @@ def parse_args():
     # test 3dpw
     parser.add_argument('--test_epoch', type=str, dest='test_epoch', default='10')
     parser.add_argument('--exp_dir', type=str, default='/home/ssw/code/3DCrowdNet/output/exp_04-06_23:43')
-    parser.add_argument('--cfg', type=str, default='/home/ssw/code/3DCrowdNet//assets/yaml/3dpw.yml',
+    parser.add_argument('--cfg', type=str, default='/home/ssw/code/3DCrowdNet//assets/yaml/3dpw_crowd.yml',
                         help='experiment configure file name')
 
     args = parser.parse_args()

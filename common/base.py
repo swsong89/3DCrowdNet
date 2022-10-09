@@ -175,5 +175,6 @@ class Tester(Base):
         return eval_result
 
     def _print_eval_result(self, eval_result):
-        self.testset.print_eval_result(eval_result)
+        result_str = self.testset.print_eval_result(eval_result)
+        self.logger.info(result_str)
 
