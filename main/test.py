@@ -68,7 +68,7 @@ def main():
             else: eval_result[k] = v
         cur_sample_idx += len(out)
     
-    tester._print_eval_result(eval_result)
+    tester._print_eval_result(eval_result)  # 1923
 
 if __name__ == "__main__":
     main()

@@ -13,7 +13,7 @@ def parse_args():
     parser.add_argument('--exp_dir', type=str, default='', help='for resuming train')
     parser.add_argument('--amp', dest='use_mixed_precision', action='store_true', help='use automatic mixed precision training')
     parser.add_argument('--init_scale', type=float, default=1024., help='initial loss scale')
-    parser.add_argument('--cfg', type=str, default='/home/ssw/code/3DCrowdNet/assets/yaml/3dpw.yml', help='experiment configure file name')
+    parser.add_argument('--cfg', type=str, default='/home/ssw/code/3DCrowdNet/assets/yaml/3dpw_crowd.yml', help='experiment configure file name')
     # parser.add_argument('--cfg', type=str, default='/data2/2020/ssw/3DCrowdNet/assets/yaml/3dpw.yml',help='experiment configure file name')
     args = parser.parse_args()
 

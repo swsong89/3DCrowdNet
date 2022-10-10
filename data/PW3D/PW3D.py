@@ -92,7 +92,7 @@ class PW3D(torch.utils.data.Dataset):
                 bbox_root_result[ann_id] = {'bbox': np.array(annot[i]['bbox']), 'root': np.array(annot[i]['root_cam'])}
         elif cfg.crowd:
             with open(osp.join(self.data_path, f'3DPW_{self.data_split}_crowd_hhrnet_result.json')) as f:
-                hhrnet_result = json.load(f)
+                hhrnet_result = json.load(f)  # _crowd_hhrnet_result.json里面仅仅是hrnet的结果,1816
             print("Load Higher-HRNet input")
 
         else:
