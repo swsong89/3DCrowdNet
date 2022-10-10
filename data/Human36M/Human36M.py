@@ -455,11 +455,20 @@ class Human36M(torch.utils.data.Dataset):
         return eval_result
 
     def print_eval_result(self, eval_result):
-        print('MPJPE from lixel mesh: %.2f mm' % np.mean(eval_result['mpjpe_lixel']))
-        print('PA MPJPE from lixel mesh: %.2f mm' % np.mean(eval_result['pa_mpjpe_lixel']))
-        
-        print('MPJPE from param mesh: %.2f mm' % np.mean(eval_result['mpjpe_param']))
-        print('PA MPJPE from param mesh: %.2f mm' % np.mean(eval_result['pa_mpjpe_param']))
+        result_str = ""
+        result_str += 'MPJPE from lixel mesh: %.2f mm' % np.mean(eval_result['mpjpe_lixel'])
+        result_str += '\n' + 'PA MPJPE from lixel mesh: %.2f mm' % np.mean(eval_result['pa_mpjpe_lixel'])
+        result_str += '\n' + 'MPJPE from param mesh: %.2f mm' % np.mean(eval_result['mpjpe_param'])
+        result_str += '\n' + 'PA MPJPE from param mesh: %.2f mm' % np.mean(eval_result['pa_mpjpe_param'])
+
+        # print('MPJPE from lixel mesh: %.2f mm' % np.mean(eval_result['mpjpe_lixel']))
+        # print('PA MPJPE from lixel mesh: %.2f mm' % np.mean(eval_result['pa_mpjpe_lixel']))
+        #
+        # print('MPJPE from param mesh: %.2f mm' % np.mean(eval_result['mpjpe_param']))
+        # print('PA MPJPE from param mesh: %.2f mm' % np.mean(eval_result['pa_mpjpe_param']))
+        return result_str
+
+
 
 ### annotation里面信息{'iamges':[248376字典], 'annotations':[248376字典]}
 """

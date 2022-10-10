@@ -142,11 +142,11 @@ class Trainer(Base):
 class Tester(Base):
     def __init__(self, test_epoch):
         self.test_epoch = int(test_epoch)
-        super(Tester, self).__init__(log_name = 'test_logs.txt')
+        super(Tester, self).__init__(log_name='test_logs.txt')
 
     def _make_batch_generator(self):
         # data load and construct batch generator
-        self.logger.info("Creating dataset...")
+        self.logger.info("Creating dataset... ")
         testset_loader = eval(cfg.testset)(transforms.ToTensor(), "test")  # pw_3d_test  1923
         batch_generator = DataLoader(dataset=testset_loader, batch_size=cfg.num_gpus*cfg.test_batch_size, shuffle=False, num_workers=cfg.num_thread, pin_memory=True)
         

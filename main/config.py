@@ -68,44 +68,44 @@ class Config:
     smpl_path = osp.join(root_dir, 'common', 'utils', 'smplpytorch')
     human_model_path = osp.join(root_dir, 'common', 'utils', 'human_model_files')
 
-    def set_args(self, gpu_ids, continue_train=False, is_test=False, no_log=False, exp_dir=''):
+    def set_args(self, gpu_ids, continue_train=False, is_test=False, exp_dir=''):
         self.gpu_ids = gpu_ids
         self.num_gpus = len(self.gpu_ids.split(','))
         self.bbox_3d_size = 2
         self.camera_3d_size = 2.5
 
-        if not no_log:  # 不是统计的话就创建目录
+
+
+        if not is_test:  # 不是测试的话
             make_folder(cfg.model_dir)
             make_folder(cfg.vis_dir)
             make_folder(cfg.log_dir)
             make_folder(cfg.result_dir)
+            self.continue_train = continue_train
+            if self.continue_train:  # 断点继续训练
+                if exp_dir:
+                    print('continue_train.....')
+                    checkpoints = sorted(glob.glob(osp.join(exp_dir, 'checkpoint') + '/*.pth.tar'),
+                                         key=lambda x: int(x.split('_')[-1][:-8]))
+                    shutil.copy(checkpoints[-1], osp.join(cfg.model_dir, checkpoints[-1].split('/')[-1]))
 
-            if not is_test:  # 不是测试的话
-                self.continue_train = continue_train
-                if self.continue_train:
-                    if exp_dir:
-                        print('continue_train.....')
-                        checkpoints = sorted(glob.glob(osp.join(exp_dir, 'checkpoint') + '/*.pth.tar'),
-                                             key=lambda x: int(x.split('_')[-1][:-8]))
-                        shutil.copy(checkpoints[-1], osp.join(cfg.model_dir, checkpoints[-1].split('/')[-1]))
+                else:  # 如果没有给定exp_dir，即找不到上次训练的断点，就在初始模型上进行训练
+                    shutil.copy(osp.join(cfg.root_dir, 'tool', 'snapshot_0.pth.tar'),
+                                osp.join(cfg.model_dir, 'snapshot_0.pth.tar'))
+        elif is_test and exp_dir:
+            self.output_dir = exp_dir
+            self.model_dir = osp.join(self.output_dir, 'checkpoint')
+            self.vis_dir = osp.join(self.output_dir, 'vis')
+            self.log_dir = osp.join(self.output_dir, 'log')
+            self.result_dir = osp.join(self.output_dir, 'result')
 
-                    else:  # 如果没有给定exp_dir，即找不到上次训练的断点，就在初始模型上进行训练
-                        shutil.copy(osp.join(cfg.root_dir, 'tool', 'snapshot_0.pth.tar'),
-                                    osp.join(cfg.model_dir, 'snapshot_0.pth.tar'))
-            elif is_test and exp_dir:
-                self.output_dir = exp_dir
-                self.model_dir = osp.join(self.output_dir, 'checkpoint')
-                self.vis_dir = osp.join(self.output_dir, 'vis')
-                self.log_dir = osp.join(self.output_dir, 'log')
-                self.result_dir = osp.join(self.output_dir, 'result')
+        os.environ["CUDA_VISIBLE_DEVICES"] = self.gpu_ids
+        print('>>> Using GPU: {}'.format(self.gpu_ids))
 
-            os.environ["CUDA_VISIBLE_DEVICES"] = self.gpu_ids
-            print('>>> Using GPU: {}'.format(self.gpu_ids))
-
-            if self.testset == 'FreiHAND':
-                assert self.trainset_3d[0] == 'FreiHAND'
-                assert len(self.trainset_3d) == 1
-                assert len(self.trainset_2d) == 0
+        if self.testset == 'FreiHAND':
+            assert self.trainset_3d[0] == 'FreiHAND'
+            assert len(self.trainset_3d) == 1
+            assert len(self.trainset_2d) == 0
 
     def update(self, config_file):
         with open(config_file) as f:

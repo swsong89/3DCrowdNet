@@ -416,9 +416,8 @@ class PW3D(torch.utils.data.Dataset):
         result_str += '\n' + 'PA MPJPE from mesh: %.2f mm' % np.mean(eval_result['pa_mpjpe'])
         result_str += '\n' + 'MPVPE from mesh: %.2f mm' % np.mean(eval_result['mpvpe'])
         # result_str += '\n' + 'Accel from mesh: %.2f mm' % eval_result['accel']
-        print(result_str)
+        # print(result_str)
         return result_str
-
 
 
 
